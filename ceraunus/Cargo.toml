@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 xchg = {path = "../xchg"}
+
+tokio = {workspace = true}

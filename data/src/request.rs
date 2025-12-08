@@ -1,10 +1,8 @@
-use serde::{Serialize, Deserialize};
-use rust_decimal::Decimal;
 use crate::order::*;
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 
-#[derive(
-    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize
-)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize)]
 pub struct RequestOpen {
     pub side: Side,
     pub price: Decimal,

@@ -1,5 +1,6 @@
 target
 debug
+test
 
 **/*.rs.bk
 

@@ -1,3 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["ceraunus", "xchg"]
+members = ["ceraunus", "data", "xchg"]
+
+[workspace.dependencies]
+serde = {version = "1.0.228", features = ["derive"]}
+tokio = {version = "1.48", features = ["full"]}
+rust_decimal ={ version = "1.39" }
+tracing = { version = "0.1.43" }
+uuid = { version = "1.19.0", features=["v4"]}
+derive_more = { version = "2.1.0", features = ["full"]}
