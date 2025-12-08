@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+data = {path = "../data"}
+rust_decimal = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+
