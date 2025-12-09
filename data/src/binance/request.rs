@@ -14,6 +14,8 @@ pub struct RequestOpen {
     pub kind: OrderKind,
     #[serde(rename = "timeInForce")]
     pub time_in_force: TimeInForce,
+    #[serde(rename = "goodTillDate", skip_serializing_if = "Option::is_none")]
+    pub good_till_date: Option<u64>,
 }
 
 // #[derive(

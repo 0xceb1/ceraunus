@@ -76,6 +76,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         dec!(0.01),
         OrderKind::Limit,
         TimeInForce::GoodUntilCancel,
+        None,
     );
 
     let response = dbg!(client.open_order(order_request).await)?;

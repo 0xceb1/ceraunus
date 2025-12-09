@@ -1,5 +1,9 @@
 use chrono::Utc;
-use data::{config::AccountConfidential, order::Symbol, request::RequestOpen};
+use data::{
+    config::AccountConfidential,
+    order::{Symbol, TimeInForce},
+    request::RequestOpen,
+};
 use hmac::{Hmac, Mac};
 use reqwest::{self, Response};
 use sha2::Sha256;
@@ -56,6 +60,14 @@ impl ExecutionClient {
     }
 
     pub fn sign(&self, request: RequestOpen) -> Result<String, Box<dyn Error>> {
+        match (request.time_in_force, request.good_till_date) {
+            (TimeInForce::GoodUntilDate, None) => {
+                return Err("goodTillDate is required for GTD orders".into());
+            }
+            (TimeInForce::GoodUntilDate, Some(_)) => {}
+            (_, Some(_)) => return Err("goodTillDate should only be set for GTD orders".into()),
+            _ => {}
+        }
         let mut query_string = serde_urlencoded::to_string(request)?;
 
         // add timestamp & symbol & clienOrderId
@@ -107,9 +119,8 @@ mod tests {
             price: dec!(1.0),
             quantity: dec!(0.01),
             kind: OrderKind::Limit,
-            time_in_force: TimeInForce::GoodUntilDate {
-                good_till_date: gtd,
-            },
+            time_in_force: TimeInForce::GoodUntilDate,
+            good_till_date: Some(gtd),
         };
 
         let client = ExecutionClient::new(

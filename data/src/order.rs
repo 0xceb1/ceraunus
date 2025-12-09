@@ -104,7 +104,7 @@ pub enum TimeInForce {
     #[serde(rename = "GTC")]
     GoodUntilCancel,
     #[serde(rename = "GTD")]
-    GoodUntilDate { good_till_date: u64 },
+    GoodUntilDate,
     #[serde(rename = "GTX")]
     GoodTillCrossing,
     #[serde(rename = "FOK")]
