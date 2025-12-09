@@ -59,7 +59,32 @@ impl ExecutionClient {
         Utc::now().timestamp_millis() as u64
     }
 
-    pub fn sign(&self, request: RequestOpen) -> Result<(String, Uuid), Box<dyn Error>> {
+    pub fn sign(&self, query_string: &str) -> Result<String, Box<dyn Error>> {
+        let mut mac = Hmac::<Sha256>::new_from_slice(self.api_secret.as_bytes())?;
+        mac.update(query_string.as_bytes());
+        let result = mac.finalize();
+        let signature = hex::encode(result.into_bytes());
+
+        let signed_request = format!("{}&signature={}", query_string, signature);
+        Ok(signed_request)
+    }
+
+    async fn signed_post(&self, path: &str, body: String) -> Result<Response, Box<dyn Error>> {
+        let url = format!("{}{}", self.endpoint, path);
+        let response = self
+            .http_client
+            .post(url)
+            .header("X-MBX-APIKEY", &self.api_key)
+            .body(body)
+            .send()
+            .await?;
+        Ok(response)
+    }
+
+    pub async fn open_order(
+        &self,
+        request: RequestOpen,
+    ) -> Result<(Response, Uuid), Box<dyn Error>> {
         match (request.time_in_force, request.good_till_date) {
             (TimeInForce::GoodUntilDate, None) => {
                 return Err("goodTillDate is required for GTD orders".into());
@@ -68,8 +93,9 @@ impl ExecutionClient {
             (_, Some(_)) => return Err("goodTillDate should only be set for GTD orders".into()),
             _ => {}
         }
+
         let client_id = Uuid::new_v4();
-        let mut query_string = serde_urlencoded::to_string(request)?;
+        let mut query_string = serde_urlencoded::to_string(&request)?;
 
         // add timestamp & symbol & clienOrderId
         let ts = Self::get_timestamp();
@@ -78,28 +104,8 @@ impl ExecutionClient {
             self.symbol, ts, client_id
         ));
 
-        // add confidential signature
-        let mut mac = Hmac::<Sha256>::new_from_slice(self.api_secret.as_bytes())?;
-        mac.update(query_string.as_bytes());
-        let result = mac.finalize();
-        let signature = hex::encode(result.into_bytes());
-
-        let signed_request = format!("{}&signature={}", query_string, signature);
-        Ok((signed_request, client_id))
-    }
-
-    pub async fn open_order(
-        &self,
-        request: RequestOpen,
-    ) -> Result<(Response, Uuid), Box<dyn Error>> {
-        let (signed_request, client_id) = self.sign(request)?;
-        let client = reqwest::Client::new();
-        let response = client
-            .post(format!("{}/fapi/v1/order", self.endpoint))
-            .header("X-MBX-APIKEY", &self.api_key)
-            .body(signed_request)
-            .send()
-            .await?;
+        let signed_request = self.sign(&query_string)?;
+        let response = self.signed_post("/fapi/v1/order", signed_request).await?;
         Ok((response, client_id))
     }
 }
