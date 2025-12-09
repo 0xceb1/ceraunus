@@ -5,17 +5,10 @@ use sha2::Sha256;
 use std::error::Error;
 use reqwest::{Response, self};
 use std::path::Path;
+use uuid::Uuid;
 
-#[allow(dead_code)]
 const TEST_ENDPOINT_REST : &'static str = "https://demo-fapi.binance.com";
-#[allow(dead_code)]
-const TEST_ENDPOINT_WS : &'static str = "wss://testnet.binancefuture.com/ws-fapi/v1";
-#[allow(dead_code)]
 const ENDPOINT_REST : &'static str = "https://fapi.binance.com";
-#[allow(dead_code)]
-const ENDPOINT_WS : &'static str = "wss://ws-fapi.binance.com/ws-fapi/v1";
-
-
 
 #[derive(Debug)]
 pub struct ExecutionClient{
@@ -62,9 +55,11 @@ impl ExecutionClient {
     pub fn sign(&self, request: RequestOpen) -> Result<String, Box<dyn Error>> {
         let mut query_string = serde_urlencoded::to_string(request)?;
 
-        // add timestamp & symbol
+        // add timestamp & symbol & clienOrderId
         let ts = Self::get_timestamp();
-        query_string.push_str(&format!("&symbol={}&timestamp={}", self.symbol, ts));
+        let client_id = Uuid::new_v4().to_string();
+        println!("client_id: {}", client_id);
+        query_string.push_str(&format!("&symbol={}&timestamp={}&newClientOrderId={}", self.symbol, ts, client_id));
 
         // add confidential signature
         let mut mac = Hmac::<Sha256>::new_from_slice(self.api_secret.as_bytes())?;
@@ -82,7 +77,6 @@ impl ExecutionClient {
         let response = client 
             .post(format!("{}/fapi/v1/order", self.endpoint))
             .header("X-MBX-APIKEY", &self.api_key)
-            // .header("Content-Type", "application/x-www-form-urlencoded")
             .body(signed_request)
             .send()
             .await;
