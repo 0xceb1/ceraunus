@@ -4,17 +4,17 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-data = {path = "../data"}
-rust_decimal = { workspace = true , features = ["macros", "serde"]}
+data = { path = "../data" }
+rust_decimal = { workspace = true, features = ["macros", "serde"] }
 tokio = { workspace = true, features = ["full"] }
-reqwest = { workspace = true}
+reqwest = { workspace = true }
 
-uuid = {workspace = true, features = ["v4"]}
-chrono = {workspace = true}
-derive_more = {workspace = true}
+uuid = { workspace = true, features = ["v4"] }
+chrono = { workspace = true }
+derive_more = { workspace = true }
 hmac = "0.12.1"
 sha2 = "0.10.9"
 hex = "0.4.3"
 serde_urlencoded = "0.7.1"
 
-openssl = {workspace = true, features = ["vendored"]}
+openssl = { workspace = true }

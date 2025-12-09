@@ -26,8 +26,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("Connected to the socket!");
 
     let (mut ws_sender, mut ws_receiver) = ws_stream.split();
-    let subscribe_msg = 
-    WsCommand::new("SUBSCRIBE", vec!["btcusdt@depth5@100ms".to_string()], 1);
+    let subscribe_msg = WsCommand::new("SUBSCRIBE", vec!["btcusdt@depth5@100ms".to_string()], 1);
 
     ws_sender
         .send(Message::Text(subscribe_msg.to_string().into()))

@@ -1,49 +1,52 @@
 use chrono::Utc;
-use data::{config::AccountConfidential, request::RequestOpen, order::Symbol};
+use data::{config::AccountConfidential, order::Symbol, request::RequestOpen};
 use hmac::{Hmac, Mac};
+use reqwest::{self, Response};
 use sha2::Sha256;
 use std::error::Error;
-use reqwest::{Response, self};
 use std::path::Path;
 use uuid::Uuid;
 
-const TEST_ENDPOINT_REST : &'static str = "https://demo-fapi.binance.com";
-const ENDPOINT_REST : &'static str = "https://fapi.binance.com";
+const TEST_ENDPOINT_REST: &'static str = "https://demo-fapi.binance.com";
+const ENDPOINT_REST: &'static str = "https://fapi.binance.com";
 
 #[derive(Debug)]
-pub struct ExecutionClient{
-    symbol : Symbol,
-    api_key : String,
+pub struct ExecutionClient {
+    symbol: Symbol,
+    api_key: String,
     api_secret: String,
     #[allow(dead_code)]
-    is_testnet: bool, 
+    is_testnet: bool,
     #[allow(dead_code)]
     http_client: reqwest::Client,
     endpoint: String,
 }
 
 impl ExecutionClient {
-    pub fn new(name: &str, csv_path: impl AsRef<Path>, symbol: Symbol, http_client : reqwest::Client) -> Option<Self> {
+    pub fn new(
+        name: &str,
+        csv_path: impl AsRef<Path>,
+        symbol: Symbol,
+        http_client: reqwest::Client,
+    ) -> Option<Self> {
         let confidential = AccountConfidential::from_csv(name, csv_path).ok()?;
         let client = match confidential.is_testnet {
             true => Self {
-                symbol, 
-                api_key : confidential.api_key,
-                api_secret : confidential.api_secret,
-                is_testnet : true,
+                symbol,
+                api_key: confidential.api_key,
+                api_secret: confidential.api_secret,
+                is_testnet: true,
                 http_client,
-                endpoint : String::from(TEST_ENDPOINT_REST) 
-
+                endpoint: String::from(TEST_ENDPOINT_REST),
             },
             false => Self {
-                symbol, 
-                api_key : confidential.api_key,
-                api_secret : confidential.api_secret,
-                is_testnet : false,
+                symbol,
+                api_key: confidential.api_key,
+                api_secret: confidential.api_secret,
+                is_testnet: false,
                 http_client,
-                endpoint : String::from(ENDPOINT_REST) 
-
-            }
+                endpoint: String::from(ENDPOINT_REST),
+            },
         };
         Some(client)
     }
@@ -59,7 +62,10 @@ impl ExecutionClient {
         let ts = Self::get_timestamp();
         let client_id = Uuid::new_v4().to_string();
         println!("client_id: {}", client_id);
-        query_string.push_str(&format!("&symbol={}&timestamp={}&newClientOrderId={}", self.symbol, ts, client_id));
+        query_string.push_str(&format!(
+            "&symbol={}&timestamp={}&newClientOrderId={}",
+            self.symbol, ts, client_id
+        ));
 
         // add confidential signature
         let mut mac = Hmac::<Sha256>::new_from_slice(self.api_secret.as_bytes())?;
@@ -74,13 +80,13 @@ impl ExecutionClient {
     pub async fn open_order(&self, request: RequestOpen) -> Result<Response, Box<dyn Error>> {
         let signed_request = self.sign(request)?;
         let client = reqwest::Client::new();
-        let response = client 
+        let response = client
             .post(format!("{}/fapi/v1/order", self.endpoint))
             .header("X-MBX-APIKEY", &self.api_key)
             .body(signed_request)
             .send()
             .await;
-    response.map_err(|e| e.into())
+        response.map_err(|e| e.into())
     }
 }
 
@@ -88,7 +94,7 @@ impl ExecutionClient {
 mod tests {
     use super::*;
     use chrono::{Duration, Utc};
-    use data::order::{OrderKind, Side, TimeInForce, Symbol};
+    use data::order::{OrderKind, Side, Symbol, TimeInForce};
     use reqwest::Client;
     use rust_decimal::dec;
 
@@ -107,8 +113,12 @@ mod tests {
         };
 
         let client = ExecutionClient::new(
-            "test", "../test/test_account_info.csv", Symbol::BTCUSDT, Client::new()
-        ).expect("Failed to create execution client");
+            "test",
+            "../test/test_account_info.csv",
+            Symbol::BTCUSDT,
+            Client::new(),
+        )
+        .expect("Failed to create execution client");
 
         let res = client.open_order(order_request).await;
         assert!(res.is_ok())

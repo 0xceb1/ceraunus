@@ -1,26 +1,24 @@
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 use crate::order::*;
 
-
-
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all="camelCase")]
+#[serde(rename_all = "camelCase")]
 pub struct OpenOrderSuccess {
     order_id: u64,
     symbol: Symbol,
     status: OrderStatus,
     client_order_id: Uuid,
-    price: Decimal, // quoted price
-    avg_price: Decimal, // avg filled price
-    orig_qty: Decimal,  // initial quoted quantity
+    price: Decimal,        // quoted price
+    avg_price: Decimal,    // avg filled price
+    orig_qty: Decimal,     // initial quoted quantity
     executed_qty: Decimal, // filled quantity
-    cum_qty: Decimal,   // filled quantity
-    cum_quote: Decimal, // filled amount in usdt 
+    cum_qty: Decimal,      // filled quantity
+    cum_quote: Decimal,    // filled amount in usdt
     side: Side,
     #[serde(with = "chrono::serde::ts_milliseconds")]
-    update_time: DateTime<Utc>
+    update_time: DateTime<Utc>,
 }

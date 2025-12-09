@@ -1,26 +1,73 @@
-use derive_more::Display;
 use serde::{Deserialize, Serialize};
+use strum_macros::{AsRefStr, Display, EnumString};
 use uuid::Uuid;
 
 pub type ClientId = Uuid;
 
 #[derive(
-    Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize, Display,
+    Debug,
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Deserialize,
+    Serialize,
+    Display,
+    AsRefStr,
+    EnumString,
 )]
 #[serde(rename_all = "UPPERCASE")]
+#[strum(serialize_all = "UPPERCASE")]
 pub enum OrderKind {
     Limit,
     Market,
     Stop,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize, Display)]
-#[serde(rename_all = "UPPERCASE")]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Deserialize,
+    Serialize,
+    Display,
+    AsRefStr,
+    EnumString,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum OrderStatus {
-    New
+    New,
+    PartiallyFilled,
+    Filled,
+    Canceled,
+    Rejected,
+    Expired,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize, Display)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Deserialize,
+    Serialize,
+    Display,
+    AsRefStr,
+    EnumString,
+)]
 pub enum Symbol {
     BTCUSDT,
     ETHUSDT,
@@ -29,9 +76,22 @@ pub enum Symbol {
 }
 
 #[derive(
-    Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize, Display,
+    Debug,
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Deserialize,
+    Serialize,
+    Display,
+    AsRefStr,
+    EnumString,
 )]
 #[serde(rename_all = "UPPERCASE")]
+#[strum(serialize_all = "UPPERCASE")]
 pub enum Side {
     Buy,
     Sell,

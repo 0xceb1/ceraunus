@@ -14,7 +14,6 @@ serde_json = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 url = { workspace = true }
 futures-util = { workspace = true }
-
 rust_decimal = { workspace = true }
 
-openssl = { workspace = true, features = ["vendored"] }
+openssl = { workspace = true }

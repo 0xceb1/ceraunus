@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
-use serde::{Serialize, Deserialize};
-use strum_macros::{Display, AsRefStr, EnumString};
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 use std::fmt;
+use strum_macros::{AsRefStr, Display, EnumString};
 
 use crate::order::Symbol;
 
@@ -16,14 +16,15 @@ pub struct StreamEnvelope<T> {
 #[serde(rename_all = "UPPERCASE")]
 #[strum(serialize_all = "UPPERCASE")]
 enum WsRequestMethod {
-    Subscribe, Unsubscribe
+    Subscribe,
+    Unsubscribe,
 }
 
 #[derive(Debug, Serialize)]
 pub struct WsCommand {
-    method: WsRequestMethod,       
-    params: Vec<String>,      // stream names per Binance docs
-    id: u64,       
+    method: WsRequestMethod,
+    params: Vec<String>, // stream names per Binance docs
+    id: u64,
 }
 
 impl fmt::Display for WsCommand {
@@ -35,9 +36,10 @@ impl fmt::Display for WsCommand {
 
 impl WsCommand {
     pub fn new(method: &str, params: Vec<String>, id: u64) -> Self {
-        Self { 
-            method: method.parse().expect("Check your spell!"), 
-            params, id
+        Self {
+            method: method.parse().expect("Check your spell!"),
+            params,
+            id,
         }
     }
 }
@@ -46,7 +48,7 @@ impl WsCommand {
 #[serde(from = "(Decimal, Decimal)")]
 pub struct Level {
     pub price: Decimal,
-    pub amount: Decimal, 
+    pub amount: Decimal,
 }
 
 impl From<(Decimal, Decimal)> for Level {
@@ -59,15 +61,15 @@ impl From<(Decimal, Decimal)> for Level {
 /// https://developers.binance.com/docs/zh-CN/derivatives/usds-margined-futures/websocket-market-streams/Mark-Price-Stream
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookDepth {
-    #[serde(rename="E", with = "chrono::serde::ts_milliseconds")]
-    event_time : DateTime<Utc>,
-    #[serde(rename="T", with = "chrono::serde::ts_milliseconds")]
+    #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
+    event_time: DateTime<Utc>,
+    #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]
     transaction_time: DateTime<Utc>,
-    #[serde(rename="s")]
+    #[serde(rename = "s")]
     symbol: Symbol,
-    #[serde(rename="U")]
+    #[serde(rename = "U")]
     first_update_id: u64,
-    #[serde(rename="u")]
+    #[serde(rename = "u")]
     final_update_id: u64,
     #[serde(rename = "b")]
     bids: Vec<Level>,
