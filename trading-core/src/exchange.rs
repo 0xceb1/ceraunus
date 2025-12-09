@@ -7,6 +7,7 @@ pub struct Client {
 
 impl Client {
     pub async fn open_order(request: RequestOpen) -> Result<(), Box<dyn Error>> {
+        
         Ok(())
     }
 }

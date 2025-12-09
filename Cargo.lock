@@ -105,7 +105,7 @@ name = "ceraunus"
 version = "0.1.0"
 dependencies = [
  "tokio",
- "xchg",
+ "trading-core",
 ]
 
 [[package]]
@@ -712,6 +712,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "trading-core"
+version = "0.1.0"
+dependencies = [
+ "data",
+ "rust_decimal",
+ "tokio",
+]
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -917,15 +926,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
 dependencies = [
  "tap",
-]
-
-[[package]]
-name = "xchg"
-version = "0.1.0"
-dependencies = [
- "data",
- "rust_decimal",
- "tokio",
 ]
 
 [[package]]

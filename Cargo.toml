@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["ceraunus", "data", "xchg"]
+members = ["ceraunus", "data", "trading-core"]
 
 [workspace.dependencies]
 serde = {version = "1.0.228", features = ["derive"]}

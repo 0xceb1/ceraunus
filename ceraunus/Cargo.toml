@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-xchg = {path = "../xchg"}
+trading-core = {path = "../trading-core"}
 
 tokio = {workspace = true}
