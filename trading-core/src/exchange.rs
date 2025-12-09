@@ -59,7 +59,7 @@ impl ExecutionClient {
         Utc::now().timestamp_millis() as u64
     }
 
-    pub fn sign(&self, request: RequestOpen) -> Result<String, Box<dyn Error>> {
+    pub fn sign(&self, request: RequestOpen) -> Result<(String, Uuid), Box<dyn Error>> {
         match (request.time_in_force, request.good_till_date) {
             (TimeInForce::GoodUntilDate, None) => {
                 return Err("goodTillDate is required for GTD orders".into());
@@ -68,12 +68,11 @@ impl ExecutionClient {
             (_, Some(_)) => return Err("goodTillDate should only be set for GTD orders".into()),
             _ => {}
         }
+        let client_id = Uuid::new_v4();
         let mut query_string = serde_urlencoded::to_string(request)?;
 
         // add timestamp & symbol & clienOrderId
         let ts = Self::get_timestamp();
-        let client_id = Uuid::new_v4().to_string();
-        println!("client_id: {}", client_id);
         query_string.push_str(&format!(
             "&symbol={}&timestamp={}&newClientOrderId={}",
             self.symbol, ts, client_id
@@ -86,19 +85,22 @@ impl ExecutionClient {
         let signature = hex::encode(result.into_bytes());
 
         let signed_request = format!("{}&signature={}", query_string, signature);
-        Ok(signed_request)
+        Ok((signed_request, client_id))
     }
 
-    pub async fn open_order(&self, request: RequestOpen) -> Result<Response, Box<dyn Error>> {
-        let signed_request = self.sign(request)?;
+    pub async fn open_order(
+        &self,
+        request: RequestOpen,
+    ) -> Result<(Response, Uuid), Box<dyn Error>> {
+        let (signed_request, client_id) = self.sign(request)?;
         let client = reqwest::Client::new();
         let response = client
             .post(format!("{}/fapi/v1/order", self.endpoint))
             .header("X-MBX-APIKEY", &self.api_key)
             .body(signed_request)
             .send()
-            .await;
-        response.map_err(|e| e.into())
+            .await?;
+        Ok((response, client_id))
     }
 }
 
@@ -106,18 +108,22 @@ impl ExecutionClient {
 mod tests {
     use super::*;
     use chrono::{Duration, Utc};
-    use data::order::{OrderKind, Side, Symbol, TimeInForce};
+    use data::{
+        order::{OrderKind, Side, TimeInForce},
+        response::OpenOrderSuccess,
+    };
     use reqwest::Client;
     use rust_decimal::dec;
+    use serde_json;
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 5)]
     async fn test_open_order() {
-        let gtd = Utc::now() + Duration::minutes(10);
-        let gtd = gtd.timestamp_millis() as u64;
+        let gtd = Utc::now() + Duration::minutes(20);
+        let gtd = (gtd.timestamp() * 1000) as u64;
         let order_request = RequestOpen {
             side: Side::Buy,
-            price: dec!(1.0),
-            quantity: dec!(0.01),
+            price: dec!(69),
+            quantity: dec!(1.0),
             kind: OrderKind::Limit,
             time_in_force: TimeInForce::GoodUntilDate,
             good_till_date: Some(gtd),
@@ -126,12 +132,30 @@ mod tests {
         let client = ExecutionClient::new(
             "test",
             "../test/test_account_info.csv",
-            Symbol::BTCUSDT,
+            "BNBUSDT".parse().unwrap(),
             Client::new(),
         )
-        .expect("Failed to create execution client");
+        .expect("Failed to create client");
 
-        let res = client.open_order(order_request).await;
-        assert!(res.is_ok())
+        let (response, client_order_id) = client
+            .open_order(order_request)
+            .await
+            .expect("Failed to open order");
+
+        let status = response.status();
+        let body = response.text().await.expect("Failed to read response body");
+        if !status.is_success() {
+            println!("{}", body);
+            panic!("order failed: status {}", status);
+        }
+
+        let success: OpenOrderSuccess =
+            serde_json::from_str(&body).expect("Failed to deserialize order response");
+
+        assert!(success.order_id > 0, "Invalid orderId");
+        assert_eq!(
+            success.client_order_id, client_order_id,
+            "clientOrderId does not match"
+        );
     }
 }

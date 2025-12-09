@@ -8,10 +8,10 @@ use crate::order::*;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenOrderSuccess {
-    order_id: u64,
+    pub order_id: u64,
     symbol: Symbol,
     status: OrderStatus,
-    client_order_id: Uuid,
+    pub client_order_id: Uuid,
     price: Decimal,        // quoted price
     avg_price: Decimal,    // avg filled price
     orig_qty: Decimal,     // initial quoted quantity

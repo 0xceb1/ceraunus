@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let client = ExecutionClient::new(
         "test",
         "./test/test_account_info.csv",
-        Symbol::BTCUSDT,
+        "SOLUSDT".parse()?,
         http.clone(),
     )
     .ok_or("Failed to build client.")?;
@@ -72,14 +72,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let order_request = RequestOpen::new(
         Side::Buy,
-        dec!(69000),
-        dec!(0.01),
+        dec!(69),
+        dec!(0.1),
         OrderKind::Limit,
         TimeInForce::GoodUntilCancel,
         None,
     );
 
-    let response = dbg!(client.open_order(order_request).await)?;
+    let (response, _client_order_id) = dbg!(client.open_order(order_request).await)?;
     let success: OpenOrderSuccess = response.json().await?;
     println!("Error message: {:?}", success);
     Ok(())

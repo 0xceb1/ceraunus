@@ -8,6 +8,7 @@ data = { path = "../data" }
 rust_decimal = { workspace = true, features = ["macros", "serde"] }
 tokio = { workspace = true, features = ["full"] }
 reqwest = { workspace = true }
+serde_json = { workspace = true }
 
 uuid = { workspace = true, features = ["v4"] }
 chrono = { workspace = true }

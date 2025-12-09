@@ -1844,6 +1844,7 @@ dependencies = [
  "openssl",
  "reqwest",
  "rust_decimal",
+ "serde_json",
  "serde_urlencoded",
  "sha2",
  "tokio",
