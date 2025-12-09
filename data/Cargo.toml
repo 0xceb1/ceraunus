@@ -9,3 +9,5 @@ serde = { workspace = true}
 derive_more = {workspace = true}
 rust_decimal = {workspace = true}
 csv = "1.4.0"
+
+openssl = {workspace = true, features = ["vendored"]}
