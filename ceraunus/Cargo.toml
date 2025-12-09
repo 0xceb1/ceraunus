@@ -4,13 +4,17 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-trading-core = {path = "../trading-core"}
-data = {path = "../data"}
+trading-core = { path = "../trading-core" }
+data = { path = "../data" }
 
-tokio = {workspace = true}
-reqwest = { workspace =  true, features = ["json"]}
-url = {workspace = true}
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+url = { workspace = true }
+futures-util = { workspace = true }
 
-rust_decimal = { workspace =  true}
+rust_decimal = { workspace = true }
 
-openssl = {workspace = true, features = ["vendored"]}
+openssl = { workspace = true, features = ["vendored"] }
