@@ -2,13 +2,11 @@ use data::{
     order::*,
     request::RequestOpen,
     response::OpenOrderSuccess,
-    subscription::{BookDepth, StreamEnvelope},
+    subscription::{BookDepth, StreamEnvelope, WsCommand},
 };
 use futures_util::{SinkExt, StreamExt};
 use reqwest;
 use rust_decimal::dec;
-use serde::Deserialize;
-use serde_json::json;
 use std::error::Error;
 use std::time::Duration;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
@@ -28,13 +26,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("Connected to the socket!");
 
     let (mut ws_sender, mut ws_receiver) = ws_stream.split();
-    let subscribe_msg = json!({
-        "method": "SUBSCRIBE",
-        "params": [
-            "btcusdt@depth5@100ms"
-        ],
-        "id": 1
-    });
+    let subscribe_msg = 
+    WsCommand::new("SUBSCRIBE", vec!["btcusdt@depth5@100ms".to_string()], 1);
 
     ws_sender
         .send(Message::Text(subscribe_msg.to_string().into()))
