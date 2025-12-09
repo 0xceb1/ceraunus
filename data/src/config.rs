@@ -23,8 +23,8 @@ pub struct AccountConfidential {
 }
 
 impl AccountConfidential {
-    pub fn from_csv(name: &str, path: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
-        let mut rdr = Reader::from_path(path)?;
+    pub fn from_csv(name: &str, csv_path: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
+        let mut rdr = Reader::from_path(csv_path)?;
         for result in rdr.deserialize() {
             let record: AccountConfidential = result?;
 

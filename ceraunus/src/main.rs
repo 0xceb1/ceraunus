@@ -1,18 +1,29 @@
-use data::config::AccountConfidential;
-use data::order::{self, *};
+use data::order::*;
 use data::request::RequestOpen;
 use rust_decimal::dec;
-use tokio::task::coop::RestoreOnPending;
 use std::error::Error;
+use std::time::Duration;
+use reqwest;
 use trading_core::exchange::ExecutionClient;
+
+const IDLE_TIMEOUT : Duration = Duration::from_secs(30);
+const HTTP_REQUEST_TIMEOUT : Duration = Duration::from_secs(3);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let account = AccountConfidential::from_csv("test", "./test/test_account_info.csv")?;
-    let client = ExecutionClient::new(account);
+    // build shared http client
+    let http = reqwest::Client::builder()
+    .tcp_nodelay(true)
+    .timeout(HTTP_REQUEST_TIMEOUT)
+    .pool_idle_timeout(IDLE_TIMEOUT)
+    .build()?;
+
+    // create a saperate execution client for each symbol
+    let client = ExecutionClient::new("test", "./test/test_account_info.csv", Symbol::BTCUSDT, http.clone())
+    .ok_or("Failed to build client.")?;
     dbg!(&client);
+
     let order_request = RequestOpen::new(
-        Symbol::BTCUSDT,
         Side::Buy,
         dec!(69000),
         dec!(0.01),

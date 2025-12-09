@@ -5,7 +5,6 @@ use derive_more::Constructor;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize, Constructor)]
 pub struct RequestOpen {
-    pub symbol : Symbol,
     pub side: Side,
     pub price: Decimal,
     pub quantity: Decimal,
