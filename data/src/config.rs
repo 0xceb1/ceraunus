@@ -15,11 +15,11 @@ where
 #[derive(Debug, Clone, Deserialize)]
 pub struct AccountConfidential {
     #[serde(rename = "account_name")]
-    name: String,
-    api_key: String,
-    api_secret: String,
+    pub name: String,
+    pub api_key: String,
+    pub api_secret: String,
     #[serde(rename = "testnet", deserialize_with = "bool_from_string")]
-    is_testnet: bool,
+    pub is_testnet: bool,
 }
 
 impl AccountConfidential {

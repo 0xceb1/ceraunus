@@ -7,5 +7,11 @@ edition = "2024"
 data = {path = "../data"}
 rust_decimal = { workspace = true , features = ["macros", "serde"]}
 tokio = { workspace = true, features = ["full"] }
+reqwest = { workspace = true}
 chrono = {workspace = true}
+derive_more = {workspace = true}
+hmac = "0.12.1"
+sha2 = "0.10.9"
+hex = "0.4.3"
+serde_urlencoded = "0.7.1"
 

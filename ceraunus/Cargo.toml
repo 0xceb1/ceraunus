@@ -5,5 +5,7 @@ edition = "2024"
 
 [dependencies]
 trading-core = {path = "../trading-core"}
+data = {path = "../data"}
 
 tokio = {workspace = true}
+rust_decimal = { workspace =  true}
