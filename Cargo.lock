@@ -150,6 +150,7 @@ dependencies = [
  "rust_decimal",
  "tokio",
  "trading-core",
+ "url",
 ]
 
 [[package]]
@@ -251,6 +252,7 @@ dependencies = [
  "openssl",
  "rust_decimal",
  "serde",
+ "serde_json",
  "uuid",
 ]
 
