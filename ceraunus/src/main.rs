@@ -2,6 +2,7 @@ use data::config::AccountConfidential;
 use data::order::{self, *};
 use data::request::RequestOpen;
 use rust_decimal::dec;
+use tokio::task::coop::RestoreOnPending;
 use std::error::Error;
 use trading_core::exchange::ExecutionClient;
 
@@ -13,14 +14,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let order_request = RequestOpen::new(
         Symbol::BTCUSDT,
         Side::Buy,
-        dec!(69),
-        dec!(0.69),
+        dec!(69000),
+        dec!(0.01),
         OrderKind::Limit,
         TimeInForce::GoodUntilCancel,
     );
 
     let _ = dbg!(&client.sign(order_request));
 
-    let _ = dbg!(&client.open_order(order_request).await);
+    let response = dbg!(client.open_order(order_request).await);
+    let response = response?;
+    println!("Error message: {}", response.text().await?);
     Ok(())
 }

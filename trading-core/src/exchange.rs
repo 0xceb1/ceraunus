@@ -7,7 +7,7 @@ use std::{error::Error, result};
 use reqwest::{Response, self};
 
 #[allow(dead_code)]
-const TEST_ENDPOINT_REST : &'static str = "https://testnet.binancefuture.com";
+const TEST_ENDPOINT_REST : &'static str = "https://demo-fapi.binance.com";
 #[allow(dead_code)]
 const TEST_ENDPOINT_WS : &'static str = "wss://fstream.binancefuture.com";
 #[allow(dead_code)]
