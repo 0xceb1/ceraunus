@@ -15,10 +15,10 @@ type Quantity = Decimal;
 #[derive(Debug)]
 pub struct OrderBook {
     symbol: Symbol,
-    local_ts: DateTime<Utc>,
-    xchg_ts: DateTime<Utc>,
-    bids: BTreeMap<Price, Quantity>,
-    asks: BTreeMap<Price, Quantity>,
+    pub local_ts: DateTime<Utc>,
+    pub xchg_ts: DateTime<Utc>,
+    pub bids: BTreeMap<Price, Quantity>,
+    pub asks: BTreeMap<Price, Quantity>,
 }
 
 impl OrderBook {

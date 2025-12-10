@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use futures_util::{SinkExt, StreamExt};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, convert::TryFrom, fmt};
+use std::{collections::HashSet, convert::TryFrom, fmt::{self, format}};
 use strum_macros::{AsRefStr, Display, EnumString};
 use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_tungstenite::{
@@ -54,8 +54,8 @@ impl WsSubscriptionCommand {
 pub enum StreamSpec {
     Depth {
         symbol: Symbol,
-        levels: u16,
-        interval_ms: u16,
+        levels: Option<u16>,
+        interval_ms: Option<u16>,
     },
     AggTrade {
         symbol: Symbol,
@@ -73,12 +73,13 @@ impl StreamSpec {
                 symbol,
                 levels,
                 interval_ms,
-            } => format!(
-                "{}@depth{}@{}ms",
-                symbol.as_ref().to_lowercase(),
-                levels,
-                interval_ms
-            ),
+            } => 
+            match (levels, interval_ms) {
+                (Some(l), Some(i)) => format!("{}@depth{l}@{i}ms", symbol.as_ref().to_lowercase()),
+                (Some(l), None) => format!("{}@depth{l}", symbol.as_ref().to_lowercase()),
+                (None, Some(i)) => format!("{}@depth@{i}ms", symbol.as_ref().to_lowercase()),
+                (None, None) => format!("{}@depth", symbol.as_ref().to_lowercase()),
+            }
             AggTrade { symbol } => {
                 format!("{}@aggTrade", symbol.as_ref().to_lowercase())
             }
@@ -96,7 +97,7 @@ pub enum Command {
 }
 
 pub enum Event {
-    Depth(BookDepth),
+    Depth(Depth),
     AggTrade(AggTrade),
     Trade(Trade),
     Raw(Utf8Bytes), // fallback
@@ -106,7 +107,7 @@ pub enum Event {
 #[serde(tag = "e")]
 enum IncomingPayload {
     #[serde(rename = "depthUpdate")]
-    Depth(BookDepth),
+    Depth(Depth),
     #[serde(rename = "trade")]
     Trade(Trade),
     #[serde(rename = "aggTrade")]
@@ -233,18 +234,17 @@ pub struct Level {
 }
 
 impl From<(Decimal, Decimal)> for Level {
-    fn from((price, amount): (Decimal, Decimal)) -> Self {
+    fn from((price, quantity): (Decimal, Decimal)) -> Self {
         Self {
-            price,
-            quantity: amount,
+            price, quantity
         }
     }
 }
 
-/// Payload model for depth update stream
-/// https://developers.binance.com/docs/zh-CN/derivatives/usds-margined-futures/websocket-market-streams/Mark-Price-Stream
+/// Payload model for depth update stream, either snapshot or incremental update
+/// https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/Mark-Price-Stream
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BookDepth {
+pub struct Depth {
     #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
     event_time: DateTime<Utc>,
     #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]
@@ -252,13 +252,15 @@ pub struct BookDepth {
     #[serde(rename = "s")]
     symbol: Symbol,
     #[serde(rename = "U")]
-    first_update_id: u64,
+    pub first_update_id: u64,
     #[serde(rename = "u")]
-    final_update_id: u64,
+    pub final_update_id: u64,
+    #[serde(rename = "pu")]
+    pub last_final_update_id: u64,
     #[serde(rename = "b")]
-    bids: Vec<Level>,
+    pub bids: Vec<Level>,
     #[serde(rename = "a")]
-    asks: Vec<Level>,
+    pub asks: Vec<Level>,
 }
 
 /// Payload model for aggTrade stream
