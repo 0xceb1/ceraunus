@@ -11,8 +11,8 @@ use std::error::Error;
 use std::path::Path;
 use uuid::Uuid;
 
-const TEST_ENDPOINT_REST: &'static str = "https://demo-fapi.binance.com";
-const ENDPOINT_REST: &'static str = "https://fapi.binance.com";
+pub const TEST_ENDPOINT_REST: &'static str = "https://demo-fapi.binance.com";
+pub const ENDPOINT_REST: &'static str = "https://fapi.binance.com";
 
 #[derive(Debug)]
 pub struct ExecutionClient {
@@ -21,7 +21,6 @@ pub struct ExecutionClient {
     api_secret: String,
     #[allow(dead_code)]
     is_testnet: bool,
-    #[allow(dead_code)]
     http_client: reqwest::Client,
     endpoint: String,
 }

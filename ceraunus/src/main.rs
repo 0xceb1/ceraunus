@@ -1,5 +1,5 @@
 use data::{
-    order::*,
+    order::{self, *},
     request::RequestOpen,
     response::OpenOrderSuccess,
     subscription::{Command, Event, StreamSpec, WsSession},
@@ -10,11 +10,14 @@ use std::error::Error;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
-use trading_core::exchange::ExecutionClient;
-use url::Url;
 #[allow(unused_imports)]
-use tracing::{info, warn, error, self};
+use tracing::{self, error, info, warn};
 use tracing_subscriber;
+use trading_core::{
+    OrderBook,
+    exchange::{ExecutionClient, TEST_ENDPOINT_REST},
+};
+use url::Url;
 
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
@@ -33,8 +36,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .with_target(false)
         // .pretty()
         .finish();
-
     tracing::subscriber::set_global_default(subscriber)?;
+
+    // build shared http client
+    let http = reqwest::Client::builder()
+        .tcp_nodelay(true)
+        .timeout(HTTP_REQUEST_TIMEOUT)
+        .pool_idle_timeout(IDLE_TIMEOUT)
+        .build()?;
 
     let url = Url::parse(TEST_ENDPOINT_WS)?;
 
@@ -49,6 +58,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let ws = WsSession::new(url, ws_config, cmd_rx, evt_tx);
 
+    let order_book: OrderBook = OrderBook::from_snapshot(
+        Symbol::BTCUSDT,
+        100,
+        TEST_ENDPOINT_REST,
+        http.clone(),
+    )
+    .await?;
+
+    dbg!(order_book);
+
     ws.spawn();
 
     cmd_tx
@@ -58,8 +77,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 levels: 20,
                 interval_ms: 100,
             },
-            StreamSpec::Trade { symbol: "BNBUSDT".parse()? },
-            StreamSpec::AggTrade { symbol: "BTCUSDT".parse()? },
+            StreamSpec::Trade {
+                symbol: "BNBUSDT".parse()?,
+            },
+            StreamSpec::AggTrade {
+                symbol: "BTCUSDT".parse()?,
+            },
         ]))
         .await?;
 
@@ -84,18 +107,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 error!("Unknown WS text: {}", text);
             }
         }
-        if cnt > 100 {
+        if cnt > 10 {
             let _ = cmd_tx.send(Command::Shutdown).await;
             break;
         }
     }
-
-    // build shared http client
-    let http = reqwest::Client::builder()
-        .tcp_nodelay(true)
-        .timeout(HTTP_REQUEST_TIMEOUT)
-        .pool_idle_timeout(IDLE_TIMEOUT)
-        .build()?;
 
     // create a saperate execution client for each symbol
     let client = ExecutionClient::new(
