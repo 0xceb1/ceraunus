@@ -81,7 +81,7 @@ impl StreamSpec {
             ),
             AggTrade { symbol } => {
                 format!("{}@aggTrade", symbol.as_ref().to_lowercase())
-            }, 
+            }
             Trade { symbol } => {
                 format!("{}@trade", symbol.as_ref().to_lowercase())
             }
@@ -103,11 +103,13 @@ pub enum Event {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(untagged)]
-// TODO: implementing the Deserialize trait by hand or with the help of the serde-untagged crate
+#[serde(tag = "e")]
 enum IncomingPayload {
+    #[serde(rename = "depthUpdate")]
     Depth(BookDepth),
+    #[serde(rename = "trade")]
     Trade(Trade),
+    #[serde(rename = "aggTrade")]
     AggTrade(AggTrade),
 }
 

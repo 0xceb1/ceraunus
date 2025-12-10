@@ -20,3 +20,10 @@ strum = "0.27"
 strum_macros = "0.27"
 
 openssl = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "event_deser"
+harness = false
