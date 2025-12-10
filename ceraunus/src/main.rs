@@ -32,17 +32,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
     let (evt_tx, mut evt_rx) = mpsc::channel(1024);
 
-    WsSession::new(url, ws_config, cmd_rx, evt_tx).spawn();
+    let ws = WsSession::new(url, ws_config, cmd_rx, evt_tx);
+
+    ws.spawn();
 
     cmd_tx
-        .send(Command::Subscribe(vec![StreamSpec::Depth {
-            symbol: "BTCUSDT".parse()?,
-            levels: 5,
-            interval_ms: 100,
-        }]))
+        .send(Command::Subscribe(vec![
+            StreamSpec::Depth {
+                symbol: "BTCUSDT".parse()?,
+                levels: 5,
+                interval_ms: 100,
+            },
+            StreamSpec::Trade { symbol: "BNBUSDT".parse()? },
+            StreamSpec::AggTrade { symbol: "BTCUSDT".parse()? },
+        ]))
         .await?;
 
-    println!("Subscribed to depth streams...");
+    println!("Subscribed to depth streams");
 
     let mut cnt = 0;
     while let Some(event) = evt_rx.recv().await {
@@ -51,11 +57,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 println!("BookDepth update: {:?}", depth);
                 cnt += 1;
             }
+            Event::Trade(trade) => {
+                println!("Trade update: {:?}", trade);
+                cnt += 1;
+            }
+            Event::AggTrade(agg_trade) => {
+                println!("AggTrade update: {:?}", agg_trade);
+                cnt += 1;
+            }
             Event::Raw(text) => {
                 println!("WS text (unparsed): {}", text);
             }
         }
-        if cnt > 5 {
+        if cnt > 20 {
             let _ = cmd_tx.send(Command::Shutdown).await;
             break;
         }

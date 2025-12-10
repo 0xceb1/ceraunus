@@ -57,12 +57,19 @@ pub enum StreamSpec {
         levels: u16,
         interval_ms: u16,
     },
+    AggTrade {
+        symbol: Symbol,
+    },
+    Trade {
+        symbol: Symbol,
+    },
 }
 
 impl StreamSpec {
     fn as_param(&self) -> String {
+        use StreamSpec::*;
         match self {
-            StreamSpec::Depth {
+            Depth {
                 symbol,
                 levels,
                 interval_ms,
@@ -72,6 +79,12 @@ impl StreamSpec {
                 levels,
                 interval_ms
             ),
+            AggTrade { symbol } => {
+                format!("{}@aggTrade", symbol.as_ref().to_lowercase())
+            }, 
+            Trade { symbol } => {
+                format!("{}@trade", symbol.as_ref().to_lowercase())
+            }
         }
     }
 }
@@ -84,7 +97,18 @@ pub enum Command {
 
 pub enum Event {
     Depth(BookDepth),
+    AggTrade(AggTrade),
+    Trade(Trade),
     Raw(Utf8Bytes), // fallback
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+// TODO: implementing the Deserialize trait by hand or with the help of the serde-untagged crate
+enum IncomingPayload {
+    Depth(BookDepth),
+    Trade(Trade),
+    AggTrade(AggTrade),
 }
 
 #[derive(Debug)]
@@ -132,17 +156,37 @@ impl WsSession {
                     maybe_msg = ws_stream.next() => {
                         match maybe_msg {
                             Some(Ok(Message::Text(txt))) => {
-                                if let Ok(depth) = serde_json::from_str::<BookDepth>(&txt) {
-                                    let _ = session.evt_tx.send(Event::Depth(depth)).await;
-                                } else {
-                                    let _ = session.evt_tx.send(Event::Raw(txt)).await;
+                                match serde_json::from_str::<IncomingPayload>(&txt) {
+                                    Ok(IncomingPayload::Depth(depth)) => {
+                                        let _ = session.evt_tx.send(Event::Depth(depth)).await;
+                                    }
+                                    Ok(IncomingPayload::AggTrade(agg_trade)) => {
+                                        let _ = session.evt_tx.send(Event::AggTrade(agg_trade)).await;
+                                    }
+                                    Ok(IncomingPayload::Trade(trade)) => {
+                                        let _ = session.evt_tx.send(Event::Trade(trade)).await;
+                                    }
+                                    Err(_) => {
+                                        let _ = session.evt_tx.send(Event::Raw(txt)).await;
+                                    }
                                 }
                             }
                             Some(Ok(Message::Binary(bin))) => {
-                                if let Ok(depth) = serde_json::from_slice::<BookDepth>(&bin) {
-                                    let _ = session.evt_tx.send(Event::Depth(depth)).await;
-                                } else if let Ok(txt) = Utf8Bytes::try_from(bin) {
-                                    let _ = session.evt_tx.send(Event::Raw(txt)).await;
+                                match serde_json::from_slice::<IncomingPayload>(&bin) {
+                                    Ok(IncomingPayload::Depth(depth)) => {
+                                        let _ = session.evt_tx.send(Event::Depth(depth)).await;
+                                    }
+                                    Ok(IncomingPayload::AggTrade(agg_trade)) => {
+                                        let _ = session.evt_tx.send(Event::AggTrade(agg_trade)).await;
+                                    }
+                                    Ok(IncomingPayload::Trade(trade)) => {
+                                        let _ = session.evt_tx.send(Event::Trade(trade)).await;
+                                    }
+                                    Err(_) => {
+                                        if let Ok(txt) = Utf8Bytes::try_from(bin) {
+                                            let _ = session.evt_tx.send(Event::Raw(txt)).await;
+                                        }
+                                    }
                                 }
                             }
                             Some(Ok(_)) => {}
@@ -183,16 +227,19 @@ impl WsSession {
 #[serde(from = "(Decimal, Decimal)")]
 pub struct Level {
     pub price: Decimal,
-    pub amount: Decimal,
+    pub quantity: Decimal,
 }
 
 impl From<(Decimal, Decimal)> for Level {
     fn from((price, amount): (Decimal, Decimal)) -> Self {
-        Self { price, amount }
+        Self {
+            price,
+            quantity: amount,
+        }
     }
 }
 
-/// Payload model for a depth update
+/// Payload model for depth update stream
 /// https://developers.binance.com/docs/zh-CN/derivatives/usds-margined-futures/websocket-market-streams/Mark-Price-Stream
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookDepth {
@@ -210,4 +257,50 @@ pub struct BookDepth {
     bids: Vec<Level>,
     #[serde(rename = "a")]
     asks: Vec<Level>,
+}
+
+/// Payload model for aggTrade stream
+/// https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/Aggregate-Trade-Streams
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AggTrade {
+    #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
+    event_time: DateTime<Utc>,
+    #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]
+    transaction_time: DateTime<Utc>,
+    #[serde(rename = "s")]
+    symbol: Symbol,
+    #[serde(rename = "a")]
+    agg_trade_id: u64,
+    #[serde(rename = "p")]
+    price: Decimal,
+    #[serde(rename = "q")]
+    quantity: Decimal,
+
+    #[serde(rename = "f")]
+    first_trade_id: u64,
+    #[serde(rename = "l")]
+    last_trade_id: u64,
+    #[serde(rename = "m")]
+    is_buyer_market_maker: bool,
+}
+
+/// Payload model for trade stream
+/// Unfortunately, the trade stream only appears in Binance spot api docs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Trade {
+    #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
+    event_time: DateTime<Utc>,
+    #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]
+    transaction_time: DateTime<Utc>,
+    #[serde(rename = "s")]
+    symbol: Symbol,
+    #[serde(rename = "t")]
+    trade_id: u64,
+    #[serde(rename = "p")]
+    price: Decimal,
+    #[serde(rename = "q")]
+    quantity: Decimal,
+
+    #[serde(rename = "m")]
+    is_buyer_market_maker: bool,
 }
