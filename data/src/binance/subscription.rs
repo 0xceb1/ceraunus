@@ -246,9 +246,9 @@ impl From<(Decimal, Decimal)> for Level {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Depth {
     #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
-    event_time: DateTime<Utc>,
+    pub event_time: DateTime<Utc>,
     #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]
-    transaction_time: DateTime<Utc>,
+    pub transaction_time: DateTime<Utc>,
     #[serde(rename = "s")]
     symbol: Symbol,
     #[serde(rename = "U")]

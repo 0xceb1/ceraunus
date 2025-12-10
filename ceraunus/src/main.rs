@@ -6,7 +6,7 @@ use data::{
 };
 use reqwest;
 use rust_decimal::dec;
-use std::error::Error;
+use std::{char::ParseCharError, error::Error};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
@@ -58,7 +58,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let ws = WsSession::new(url, ws_config, cmd_rx, evt_tx);
 
-    let order_book: OrderBook = OrderBook::from_snapshot(
+    ws.spawn();
+
+    cmd_tx
+        .send(Command::Subscribe(vec![
+            StreamSpec::Depth {
+                symbol: "BTCUSDT".parse()?,
+                levels: None,
+                interval_ms: None,
+            },
+        ])).await?;
+
+    info!("Subscribed to depth streams");
+
+    let mut order_book: OrderBook = OrderBook::from_snapshot(
         Symbol::BTCUSDT,
         100,
         TEST_ENDPOINT_REST,
@@ -66,48 +79,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
     )
     .await?;
 
-    dbg!(order_book);
-
-    ws.spawn();
-
-    cmd_tx
-        .send(Command::Subscribe(vec![
-            StreamSpec::Depth {
-                symbol: "BTCUSDT".parse()?,
-                levels: 20,
-                interval_ms: 100,
-            },
-            StreamSpec::Trade {
-                symbol: "BNBUSDT".parse()?,
-            },
-            StreamSpec::AggTrade {
-                symbol: "BTCUSDT".parse()?,
-            },
-        ]))
-        .await?;
-
-    info!("Subscribed to depth streams");
+    info!(local_ts = ?&order_book.local_ts, xchg_ts = ?&order_book.xchg_ts, depth=?&order_book.bids.len());
 
     let mut cnt = 0;
     while let Some(event) = evt_rx.recv().await {
         match event {
             Event::Depth(depth) => {
-                info!("BookDepth update received: {:?}", depth);
+                info!(target: "depth", final_update_id = ?depth.final_update_id);
+                if cnt == 0 {
+                    order_book.extend(depth);
+                } else if order_book.last_update_id == depth.last_final_update_id {
+                    order_book.extend(depth);
+                } else {
+                    panic!("NOT IMPLEMENTED")
+                }
                 cnt += 1;
             }
-            Event::Trade(trade) => {
-                info!("Trade update received: {:?}", trade);
-                cnt += 1;
-            }
-            Event::AggTrade(agg_trade) => {
-                info!("AggTrade update received: {:?}", agg_trade);
-                cnt += 1;
-            }
-            Event::Raw(text) => {
-                error!("Unknown WS text: {}", text);
-            }
+            _ => {},
         }
-        if cnt > 10 {
+        if cnt > 50 {
             let _ = cmd_tx.send(Command::Shutdown).await;
             break;
         }

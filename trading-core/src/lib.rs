@@ -1,11 +1,11 @@
 use chrono::{DateTime, Utc};
 use data::order::*;
+use data::subscription::Depth;
 use reqwest::Client;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer, de::Error as DeError};
+use serde::{Deserialize, Deserializer};
 use std::collections::BTreeMap;
 use std::error::Error;
-use std::str::FromStr;
 
 pub mod exchange;
 
@@ -17,6 +17,7 @@ pub struct OrderBook {
     symbol: Symbol,
     pub local_ts: DateTime<Utc>,
     pub xchg_ts: DateTime<Utc>,
+    pub last_update_id: u64,
     pub bids: BTreeMap<Price, Quantity>,
     pub asks: BTreeMap<Price, Quantity>,
 }
@@ -27,6 +28,7 @@ impl OrderBook {
             symbol,
             local_ts: Utc::now(),
             xchg_ts: Utc::now(),
+            last_update_id: 0,
             bids: BTreeMap::new(),
             asks: BTreeMap::new(),
         }
@@ -46,10 +48,37 @@ impl OrderBook {
         Ok(OrderBook {
             symbol,
             local_ts: Utc::now(),
+            last_update_id: 0,
             xchg_ts: snapshot.xchg_ts,
             bids: snapshot.bids,
             asks: snapshot.asks,
         })
+    }
+
+    pub fn extend(&mut self, depth: Depth) {
+        if depth.final_update_id < self.last_update_id {
+            return;
+        }
+        self.xchg_ts = depth.transaction_time;
+        self.local_ts = Utc::now();
+        self.last_update_id = depth.final_update_id;
+
+        // TODO: more elegant way?
+        for level in depth.bids {
+            if level.quantity.is_zero() {
+                self.bids.remove(&level.price);
+            } else {
+                self.bids.insert(level.price, level.quantity);
+            }
+        }
+
+        for level in depth.asks {
+            if level.quantity.is_zero() {
+                self.asks.remove(&level.price);
+            } else {
+                self.asks.insert(level.price, level.quantity);
+            }
+        }
     }
 }
 
