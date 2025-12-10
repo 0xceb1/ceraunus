@@ -12,6 +12,9 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use trading_core::exchange::ExecutionClient;
 use url::Url;
+#[allow(unused_imports)]
+use tracing::{info, warn, error, self};
+use tracing_subscriber;
 
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
@@ -21,6 +24,18 @@ const ENDPOINT_WS: &'static str = "wss://fstream.binance.com/ws";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    // Configure tracing subscriber
+    let subscriber = tracing_subscriber::fmt()
+        .compact()
+        .with_file(false)
+        .with_line_number(false)
+        .with_thread_ids(false)
+        .with_target(false)
+        // .pretty()
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber)?;
+
     let url = Url::parse(TEST_ENDPOINT_WS)?;
 
     let ws_config = WebSocketConfig::default()
@@ -40,7 +55,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .send(Command::Subscribe(vec![
             StreamSpec::Depth {
                 symbol: "BTCUSDT".parse()?,
-                levels: 5,
+                levels: 20,
                 interval_ms: 100,
             },
             StreamSpec::Trade { symbol: "BNBUSDT".parse()? },
@@ -48,28 +63,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ]))
         .await?;
 
-    println!("Subscribed to depth streams");
+    info!("Subscribed to depth streams");
 
     let mut cnt = 0;
     while let Some(event) = evt_rx.recv().await {
         match event {
             Event::Depth(depth) => {
-                println!("BookDepth update: {:?}", depth);
+                info!("BookDepth update received: {:?}", depth);
                 cnt += 1;
             }
             Event::Trade(trade) => {
-                println!("Trade update: {:?}", trade);
+                info!("Trade update received: {:?}", trade);
                 cnt += 1;
             }
             Event::AggTrade(agg_trade) => {
-                println!("AggTrade update: {:?}", agg_trade);
+                info!("AggTrade update received: {:?}", agg_trade);
                 cnt += 1;
             }
             Event::Raw(text) => {
-                println!("WS text (unparsed): {}", text);
+                error!("Unknown WS text: {}", text);
             }
         }
-        if cnt > 20 {
+        if cnt > 100 {
             let _ = cmd_tx.send(Command::Shutdown).await;
             break;
         }
@@ -90,7 +105,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         http.clone(),
     )
     .ok_or("Failed to build client.")?;
-    dbg!(&client);
+
+    info!("Execution client built: {:?}", &client);
 
     let order_request = RequestOpen::new(
         Side::Buy,
@@ -101,8 +117,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         None,
     );
 
-    let (response, _client_order_id) = dbg!(client.open_order(order_request).await)?;
+    let (response, _client_order_id) = client.open_order(order_request).await?;
+
     let success: OpenOrderSuccess = response.json().await?;
-    println!("Error message: {:?}", success);
+    info!("Order placement ACK: {:?}", success);
     Ok(())
 }

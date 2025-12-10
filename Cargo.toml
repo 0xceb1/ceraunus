@@ -10,6 +10,7 @@ tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
 reqwest = { version = "0.12.25" }
 url = { version = "2.5.7" }
 tracing = { version = "0.1.43" }
+tracing-subscriber = { version = "0.3.22", features = ["fmt"]}
 futures-util = { version = "0.3.31" }
 
 rust_decimal = { version = "1.39", features = ["macros", "serde"] }
