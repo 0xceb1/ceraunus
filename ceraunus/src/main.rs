@@ -2,25 +2,22 @@ use data::{
     order::*,
     request::RequestOpen,
     response::OpenOrderSuccess,
-    subscription::{BookDepth, StreamEnvelope, WsCommand},
+    subscription::{Command, Event, StreamSpec, WsSession},
 };
-use futures_util::{SinkExt, StreamExt};
 use reqwest;
 use rust_decimal::dec;
 use std::error::Error;
 use std::time::Duration;
-use tokio_tungstenite::{
-    connect_async_with_config,
-    tungstenite::protocol::{Message, WebSocketConfig},
-};
+use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use trading_core::exchange::ExecutionClient;
 use url::Url;
 
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
-const TEST_ENDPOINT_WS: &'static str = "wss://fstream.binancefuture.com/stream";
+const TEST_ENDPOINT_WS: &'static str = "wss://fstream.binancefuture.com/ws";
 #[allow(dead_code)]
-const ENDPOINT_WS: &'static str = "wss://fstream.binance.com/stream";
+const ENDPOINT_WS: &'static str = "wss://fstream.binance.com/ws";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -31,34 +28,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .max_write_buffer_size(256 * 1024)
         .max_message_size(Some(512 * 1024))
         .max_frame_size(Some(256 * 1024));
-    
-    let (ws_stream, _) = connect_async_with_config(url.as_str(), Some(ws_config), true).await?;
-    println!("Connected to the socket!");
 
-    let (mut ws_sender, mut ws_receiver) = ws_stream.split();
-    let subscribe_msg = WsCommand::new("SUBSCRIBE", vec!["btcusdt@depth5@100ms".to_string()], 1);
+    let (cmd_tx, cmd_rx) = mpsc::channel(32);
+    let (evt_tx, mut evt_rx) = mpsc::channel(1024);
 
-    ws_sender
-        .send(Message::Text(subscribe_msg.to_string().into()))
+    WsSession::new(url, ws_config, cmd_rx, evt_tx).spawn();
+
+    cmd_tx
+        .send(Command::Subscribe(vec![StreamSpec::Depth {
+            symbol: "BTCUSDT".parse()?,
+            levels: 5,
+            interval_ms: 100,
+        }]))
         .await?;
 
-    println!("Subscribed to btcusdt@depth5@100ms...");
+    println!("Subscribed to depth streams...");
 
-    // listen to the book depth update
-    while let Some(msg) = ws_receiver.next().await {
-        let msg = msg?;
-        if let Message::Text(text) = msg {
-            if let Ok(depth) = serde_json::from_str::<BookDepth>(&text) {
+    let mut cnt = 0;
+    while let Some(event) = evt_rx.recv().await {
+        match event {
+            Event::Depth(depth) => {
                 println!("BookDepth update: {:?}", depth);
-                break;
+                cnt += 1;
             }
-
-            if let Ok(enveloped) = serde_json::from_str::<StreamEnvelope<BookDepth>>(&text) {
-                println!("BookDepth update: {:?}", enveloped.data);
-                break;
+            Event::Raw(text) => {
+                println!("WS text (unparsed): {}", text);
             }
-
-            println!("WS text (unparsed): {}", text);
+        }
+        if cnt > 5 {
+            let _ = cmd_tx.send(Command::Shutdown).await;
+            break;
         }
     }
 

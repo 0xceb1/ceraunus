@@ -255,12 +255,16 @@ dependencies = [
  "chrono",
  "csv",
  "derive_more",
+ "futures-util",
  "openssl",
  "rust_decimal",
  "serde",
  "serde_json",
  "strum",
  "strum_macros",
+ "tokio",
+ "tokio-tungstenite",
+ "url",
  "uuid",
 ]
 

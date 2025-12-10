@@ -10,6 +10,10 @@ serde_json = { workspace = true }
 derive_more = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 rust_decimal = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+url = { workspace = true }
+futures-util = { workspace = true }
 
 csv = "1.4.0"
 strum = "0.27"
