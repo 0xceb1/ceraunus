@@ -9,7 +9,10 @@ use reqwest;
 use rust_decimal::dec;
 use std::error::Error;
 use std::time::Duration;
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tokio_tungstenite::{
+    connect_async_with_config,
+    tungstenite::protocol::{Message, WebSocketConfig},
+};
 use trading_core::exchange::ExecutionClient;
 use url::Url;
 
@@ -22,7 +25,14 @@ const ENDPOINT_WS: &'static str = "wss://fstream.binance.com/stream";
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let url = Url::parse(TEST_ENDPOINT_WS)?;
-    let (ws_stream, _) = connect_async(url.as_str()).await?;
+
+    let ws_config = WebSocketConfig::default()
+        .write_buffer_size(0)
+        .max_write_buffer_size(256 * 1024)
+        .max_message_size(Some(512 * 1024))
+        .max_frame_size(Some(256 * 1024));
+    
+    let (ws_stream, _) = connect_async_with_config(url.as_str(), Some(ws_config), true).await?;
     println!("Connected to the socket!");
 
     let (mut ws_sender, mut ws_receiver) = ws_stream.split();
@@ -30,8 +40,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     ws_sender
         .send(Message::Text(subscribe_msg.to_string().into()))
-        .await
-        .expect("Failed to send subscription");
+        .await?;
 
     println!("Subscribed to btcusdt@depth5@100ms...");
 
@@ -73,7 +82,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let order_request = RequestOpen::new(
         Side::Buy,
         dec!(69),
-        dec!(0.1),
+        dec!(1),
         OrderKind::Limit,
         TimeInForce::GoodUntilCancel,
         None,
