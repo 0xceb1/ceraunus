@@ -68,7 +68,7 @@ pub enum StreamSpec {
     Trade {
         symbol: Symbol,
     },
-
+    OrderTradeUpdate,
     TradeLite,
 }
 
@@ -89,6 +89,7 @@ impl StreamSpec {
             AggTrade { symbol } => format!("{}@aggTrade", symbol.as_ref().to_lowercase()),
             Trade { symbol } => format!("{}@trade", symbol.as_ref().to_lowercase()),
             TradeLite => "TRADE_LITE".to_string(),
+            OrderTradeUpdate => "ORDER_TRADE_UPDATE".to_string(),
         }
     }
 }
