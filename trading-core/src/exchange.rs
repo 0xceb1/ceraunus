@@ -146,7 +146,7 @@ impl Client {
         Ok(success)
     }
 
-    pub async fn cancel_order(&self, client_id: Uuid) -> Result<Response, Box<dyn Error>> {
+    pub async fn cancel_order(&self, client_id: Uuid) -> Result<OrderSuccessResp, Box<dyn Error>> {
         let query_string = format!(
             "symbol={}&origClientOrderId={}&timestamp={}",
             self.symbol,
@@ -155,7 +155,14 @@ impl Client {
         );
         let signed_request = self.sign(&query_string)?;
         let response = self.signed_delete("/fapi/v1/order", signed_request).await?;
-        Ok(response)
+        let status = response.status();
+        let body = response.text().await?;
+        if !status.is_success() {
+            return Err(format!("order failed: status {} body {}", status, body).into());
+        }
+
+        let success: OrderSuccessResp = serde_json::from_str(&body)?;
+        Ok(success)
     }
 }
 
@@ -164,11 +171,10 @@ mod tests {
     use super::*;
     use chrono::{Duration, Utc};
     use data::{
-        order::{OrderKind, Side, TimeInForce},
+        order::{OrderKind, Side, TimeInForce, OrderStatus},
         response::OrderSuccessResp,
     };
     use rust_decimal::dec;
-    use serde_json;
 
     fn make_client() -> Client {
         Client::new(
@@ -229,28 +235,11 @@ mod tests {
             .expect("Failed to open order");
         let client_order_id = success.client_order_id;
 
-        let cancel_response = client
+        let cancel_success = client
             .cancel_order(client_order_id)
             .await
             .expect("Failed to cancel order");
 
-        let cancel_status = cancel_response.status();
-        let cancel_body = cancel_response
-            .text()
-            .await
-            .expect("Failed to read cancel response body");
-        if !cancel_status.is_success() {
-            println!("{}", cancel_body);
-            panic!("cancel failed: status {}", cancel_status);
-        }
-
-        let canceled: serde_json::Value =
-            serde_json::from_str(&cancel_body).expect("Failed to deserialize cancel response");
-
-        assert_eq!(
-            canceled.get("clientOrderId").and_then(|v| v.as_str()),
-            Some(client_order_id.to_string().as_str()),
-            "clientOrderId does not match after cancel"
-        );
+        assert_eq!(cancel_success.status, OrderStatus::Canceled);
     }
 }

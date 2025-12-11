@@ -10,7 +10,7 @@ use crate::order::*;
 pub struct OrderSuccessResp {
     pub order_id: u64,
     symbol: Symbol,
-    status: OrderStatus,
+    pub status: OrderStatus,
     pub client_order_id: Uuid,
     price: Decimal,        // quoted price
     // avg_price: Decimal,    // avg filled price
