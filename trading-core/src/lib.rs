@@ -6,6 +6,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::fmt::{self, Formatter};
 
 pub mod exchange;
 
@@ -48,7 +49,7 @@ impl OrderBook {
         Ok(OrderBook {
             symbol,
             local_ts: Utc::now(),
-            last_update_id: 0,
+            last_update_id: snapshot.last_update_id,
             xchg_ts: snapshot.xchg_ts,
             bids: snapshot.bids,
             asks: snapshot.asks,
@@ -56,9 +57,7 @@ impl OrderBook {
     }
 
     pub fn extend(&mut self, depth: Depth) {
-        if depth.final_update_id < self.last_update_id {
-            return;
-        }
+        // WARN: This is a dumb method, please check the last_update_id by yourself
         self.xchg_ts = depth.transaction_time;
         self.local_ts = Utc::now();
         self.last_update_id = depth.final_update_id;
@@ -82,11 +81,23 @@ impl OrderBook {
     }
 }
 
+impl fmt::Display for OrderBook {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(
+            f,
+            "{} OrderBook (last_update_id: {})",
+            self.symbol, self.last_update_id
+        )
+    }
+}
+
 /// Helper struct to construct OrderBook from binance snapshot
 #[derive(Deserialize)]
 struct DepthSnapshot {
     #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]
     xchg_ts: DateTime<Utc>,
+    #[serde(rename = "lastUpdateId")]
+    last_update_id: u64,
     #[serde(deserialize_with = "de_side")]
     bids: BTreeMap<Price, Quantity>,
     #[serde(deserialize_with = "de_side")]
@@ -104,6 +115,6 @@ where
     // Binance depth returns [["price", "qty"], ...]; let serde parse strings into Decimal.
     let raw: Vec<(Price, Quantity)> = Deserialize::deserialize(deserializer)?;
     let mut side = BTreeMap::new();
-    side.extend(raw);
+    side.extend(raw); // O(N*log(N))
     Ok(side)
 }

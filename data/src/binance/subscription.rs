@@ -2,7 +2,11 @@ use chrono::{DateTime, Utc};
 use futures_util::{SinkExt, StreamExt};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, convert::TryFrom, fmt::{self, format}};
+use std::{
+    collections::HashSet,
+    convert::TryFrom,
+    fmt,
+};
 use strum_macros::{AsRefStr, Display, EnumString};
 use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_tungstenite::{
@@ -73,13 +77,12 @@ impl StreamSpec {
                 symbol,
                 levels,
                 interval_ms,
-            } => 
-            match (levels, interval_ms) {
+            } => match (levels, interval_ms) {
                 (Some(l), Some(i)) => format!("{}@depth{l}@{i}ms", symbol.as_ref().to_lowercase()),
                 (Some(l), None) => format!("{}@depth{l}", symbol.as_ref().to_lowercase()),
                 (None, Some(i)) => format!("{}@depth@{i}ms", symbol.as_ref().to_lowercase()),
                 (None, None) => format!("{}@depth", symbol.as_ref().to_lowercase()),
-            }
+            },
             AggTrade { symbol } => {
                 format!("{}@aggTrade", symbol.as_ref().to_lowercase())
             }
@@ -235,9 +238,7 @@ pub struct Level {
 
 impl From<(Decimal, Decimal)> for Level {
     fn from((price, quantity): (Decimal, Decimal)) -> Self {
-        Self {
-            price, quantity
-        }
+        Self { price, quantity }
     }
 }
 

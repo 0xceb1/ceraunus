@@ -1,18 +1,21 @@
+#[allow(unused_imports)]
 use data::{
     order::{self, *},
     request::RequestOpen,
     response::OpenOrderSuccess,
-    subscription::{Command, Event, StreamSpec, WsSession},
+    subscription::{Command, Depth, Event, StreamSpec, WsSession},
 };
 use reqwest;
+#[allow(unused_imports)]
 use rust_decimal::dec;
-use std::{char::ParseCharError, error::Error};
 use std::time::Duration;
+use std::{error::Error, future::Future, pin::Pin};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 #[allow(unused_imports)]
 use tracing::{self, error, info, warn};
 use tracing_subscriber;
+#[allow(unused_imports)]
 use trading_core::{
     OrderBook,
     exchange::{ExecutionClient, TEST_ENDPOINT_REST},
@@ -61,71 +64,108 @@ async fn main() -> Result<(), Box<dyn Error>> {
     ws.spawn();
 
     cmd_tx
-        .send(Command::Subscribe(vec![
-            StreamSpec::Depth {
-                symbol: "BTCUSDT".parse()?,
-                levels: None,
-                interval_ms: None,
-            },
-        ])).await?;
+        .send(Command::Subscribe(vec![StreamSpec::Depth {
+            symbol: "BTCUSDT".parse()?,
+            levels: None,
+            interval_ms: None,
+        }]))
+        .await?;
 
     info!("Subscribed to depth streams");
 
-    let mut order_book: OrderBook = OrderBook::from_snapshot(
-        Symbol::BTCUSDT,
-        100,
-        TEST_ENDPOINT_REST,
-        http.clone(),
-    )
-    .await?;
+    let mut depth_buffer: Vec<Depth> = Vec::with_capacity(8);
+    let mut order_book: Option<OrderBook> = None;
+    let mut snapshot_fut = snapshot_task(http.clone(), 1000, Duration::from_millis(1000));
 
-    info!(local_ts = ?&order_book.local_ts, xchg_ts = ?&order_book.xchg_ts, depth=?&order_book.bids.len());
-
-    let mut cnt = 0;
-    while let Some(event) = evt_rx.recv().await {
-        match event {
-            Event::Depth(depth) => {
-                info!(target: "depth", final_update_id = ?depth.final_update_id);
-                if cnt == 0 {
-                    order_book.extend(depth);
-                } else if order_book.last_update_id == depth.last_final_update_id {
-                    order_book.extend(depth);
-                } else {
-                    panic!("NOT IMPLEMENTED")
+    loop {
+        tokio::select! {
+            // WebSocket events received
+            Some(event) = evt_rx.recv() => match event {
+                Event::Depth(depth) => {
+                    info!(name="Depth received", final_update_id = %depth.final_update_id);
+                    if let Some(ob) = order_book.as_mut() {
+                        if (depth.last_final_update_id..=depth.final_update_id).contains(&ob.last_update_id) {
+                            // TODO: recheck the gap-detection logic here
+                            ob.extend(depth);
+                        } else {
+                            warn!(name="Gap detected in depth updates",
+                                %depth.last_final_update_id,
+                                %depth.first_update_id,
+                                %depth.final_update_id);
+                            order_book = None;
+                            snapshot_fut = snapshot_task(http.clone(), 1000, Duration::from_millis(1000));
+                        }
+                    } else {
+                        // Order book not constructed yet
+                        depth_buffer.push(depth);
+                        info!(name="Depth pushed to buffer", buffer_size=%&depth_buffer.len());
+                    }
                 }
-                cnt += 1;
+                Event::AggTrade(_) | Event::Trade(_) => {},
+                Event::Raw(bytes) => info!("{}", bytes),
+                },
+
+            // SNAPSHOT done
+            snapshot_res = &mut snapshot_fut, if order_book.is_none() => {
+                let mut ob = snapshot_res?;
+
+                for depth in depth_buffer.drain(..) {
+                    if depth.final_update_id < ob.last_update_id {
+                        continue; // too old
+                    } else {
+                        // TODO: we don't check U <= lastUpdateId AND u >= lastUpdateId here
+                        ob.extend(depth);
+                    }
+                }
+                info!(name="Order book ready", last_update_id=%ob.last_update_id);
+                order_book = Some(ob);
             }
-            _ => {},
-        }
-        if cnt > 50 {
-            let _ = cmd_tx.send(Command::Shutdown).await;
-            break;
         }
     }
 
+    //     if cnt > 50 {
+    //         let _ = cmd_tx.send(Command::Shutdown).await;
+    //         break;
+    //     }
+    // }
+
     // create a saperate execution client for each symbol
-    let client = ExecutionClient::new(
-        "test",
-        "./test/test_account_info.csv",
-        "SOLUSDT".parse()?,
-        http.clone(),
-    )
-    .ok_or("Failed to build client.")?;
+    // let client = ExecutionClient::new(
+    //     "test",
+    //     "./test/test_account_info.csv",
+    //     "SOLUSDT".parse()?,
+    //     http.clone(),
+    // )
+    // .ok_or("Failed to build client.")?;
 
-    info!("Execution client built: {:?}", &client);
+    // info!("Execution client built: {:?}", &client);
 
-    let order_request = RequestOpen::new(
-        Side::Buy,
-        dec!(69),
-        dec!(1),
-        OrderKind::Limit,
-        TimeInForce::GoodUntilCancel,
-        None,
-    );
+    // let order_request = RequestOpen::new(
+    //     Side::Buy,
+    //     dec!(69),
+    //     dec!(1),
+    //     OrderKind::Limit,
+    //     TimeInForce::GoodUntilCancel,
+    //     None,
+    // );
 
-    let (response, _client_order_id) = client.open_order(order_request).await?;
+    // let (response, _client_order_id) = client.open_order(order_request).await?;
 
-    let success: OpenOrderSuccess = response.json().await?;
-    info!("Order placement ACK: {:?}", success);
-    Ok(())
+    // let success: OpenOrderSuccess = response.json().await?;
+    // info!("Order placement ACK: {:?}", success);
+    // Ok(())
 }
+
+fn snapshot_task(
+    http: reqwest::Client,
+    depth: u16,
+    delay: Duration,
+) -> Pin<Box<dyn Future<Output = Result<OrderBook, Box<dyn Error>>> + Send>> {
+    Box::pin(async move {
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
+        }
+        OrderBook::from_snapshot(Symbol::BTCUSDT, depth, TEST_ENDPOINT_REST, http).await
+    })
+}
+
