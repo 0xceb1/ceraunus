@@ -3,20 +3,23 @@ resolver = "3"
 members = ["ceraunus", "data", "trading-core"]
 
 [workspace.dependencies]
-serde = { version = "1.0.228", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.48", features = ["full"] }
 tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
-reqwest = { version = "0.12.25" }
-url = { version = "2.5.7" }
-tracing = { version = "0.1.43" }
-tracing-subscriber = { version = "0.3.22", features = ["fmt"] }
-futures-util = { version = "0.3.31" }
+reqwest = { version = "0.12" }
+url = { version = "2.5" }
+tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
+futures-util = { version = "0.3" }
+
+anyhow = {version = "1.0"}
+thiserror = {version = "2.0"}
 
 rust_decimal = { version = "1.39", features = ["macros", "serde"] }
-uuid = { version = "1.19.0", features = ["v4"] }
-derive_more = { version = "2.1.0", features = ["full"] }
-chrono = { version = "0.4.42" }
+uuid = { version = "1.19", features = ["v4"] }
+derive_more = { version = "2.1", features = ["full"] }
+chrono = { version = "0.4" }
 
 openssl = { version = "0.10", features = ["vendored"] }
 criterion = { version = "0.8", default-features = false, features = [

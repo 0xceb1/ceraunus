@@ -1,9 +1,10 @@
+use crate::Result;
+use crate::error::{ConfigError, DataError};
 use csv::Reader;
 use serde::{Deserialize, Deserializer};
-use std::error::Error;
 use std::path::Path;
 
-fn bool_from_string<'de, D>(deserializer: D) -> Result<bool, D::Error>
+fn bool_from_string<'de, D>(deserializer: D) -> std::result::Result<bool, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -23,7 +24,7 @@ pub struct AccountConfidential {
 }
 
 impl AccountConfidential {
-    pub fn from_csv(name: &str, csv_path: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
+    pub fn from_csv(name: &str, csv_path: impl AsRef<Path>) -> Result<Self> {
         let mut rdr = Reader::from_path(csv_path)?;
         for result in rdr.deserialize() {
             let record: AccountConfidential = result?;
@@ -32,7 +33,9 @@ impl AccountConfidential {
                 return Ok(record);
             }
         }
-        Err(format!("Account with name '{}' not found", name).into())
+        Err(DataError::Config(ConfigError::AccountNotFound {
+            name: name.to_string(),
+        }))
     }
 }
 
