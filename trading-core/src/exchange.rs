@@ -3,9 +3,12 @@ use data::{
     config::AccountConfidential,
     order::{Symbol, TimeInForce},
     request::RequestOpen,
+    response,
 };
 use hmac::{Hmac, Mac};
+use openssl::sign;
 use reqwest::{self, Response};
+use serde_json::Value;
 use sha2::Sha256;
 use std::error::Error;
 use std::path::Path;
@@ -15,7 +18,7 @@ pub const TEST_ENDPOINT_REST: &'static str = "https://demo-fapi.binance.com";
 pub const ENDPOINT_REST: &'static str = "https://fapi.binance.com";
 
 #[derive(Debug)]
-pub struct ExecutionClient {
+pub struct Client {
     symbol: Symbol,
     api_key: String,
     api_secret: String,
@@ -25,7 +28,7 @@ pub struct ExecutionClient {
     endpoint: String,
 }
 
-impl ExecutionClient {
+impl Client {
     pub fn new(
         name: &str,
         csv_path: impl AsRef<Path>,
@@ -92,6 +95,23 @@ impl ExecutionClient {
         Ok(response)
     }
 
+    pub async fn get_listen_key(&self) -> Result<String, Box<dyn Error>> {
+        let signed_request = self.sign("")?;
+        let body = self
+            .signed_post("/fapi/v1/listenKey", signed_request)
+            .await?
+            .text()
+            .await?;
+
+        let listen_key = serde_json::from_str::<Value>(&body)?
+            .get("listenKey")
+            .and_then(|v| v.as_str())
+            .ok_or("listenKey field missing")?
+            .to_string();
+
+        Ok(listen_key)
+    }
+
     pub async fn open_order(
         &self,
         request: RequestOpen,
@@ -140,16 +160,15 @@ mod tests {
         order::{OrderKind, Side, TimeInForce},
         response::OrderSuccessResp,
     };
-    use reqwest::Client;
     use rust_decimal::dec;
     use serde_json;
 
-    fn make_client() -> ExecutionClient {
-        ExecutionClient::new(
+    fn make_client() -> Client {
+        Client::new(
             "test",
             "../test/test_account_info.csv",
             "BNBUSDT".parse().unwrap(),
-            Client::new(),
+            reqwest::Client::new(),
         )
         .expect("Failed to create client")
     }
@@ -165,6 +184,18 @@ mod tests {
             time_in_force: TimeInForce::GoodUntilDate,
             good_till_date: Some(gtd),
         }
+    }
+
+    #[tokio::test]
+    async fn test_get_listen_key() {
+        let client = make_client();
+        let listen_key = client
+            .get_listen_key()
+            .await
+            .expect("Failed to fetch listen key");
+
+        println!("listen key: {}", listen_key);
+        assert!(!listen_key.is_empty(), "listen key should not be empty");
     }
 
     #[tokio::test()]

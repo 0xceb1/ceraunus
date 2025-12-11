@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use data::order::*;
 use data::subscription::Depth;
-use reqwest::Client;
+use reqwest;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 use std::collections::BTreeMap;
@@ -39,7 +39,7 @@ impl OrderBook {
         symbol: Symbol,
         depth: u16,
         endpoint: &str,
-        client: Client,
+        client: reqwest::Client,
     ) -> Result<Self, Box<dyn Error>> {
         let url = format!("{endpoint}/fapi/v1/depth?symbol={symbol}&limit={depth}");
         let response = client.get(url).send().await?;
