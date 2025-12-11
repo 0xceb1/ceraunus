@@ -101,7 +101,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         info!(name="Depth pushed to buffer", buffer_size=%&depth_buffer.len());
                     }
                 }
-                Event::AggTrade(_) | Event::Trade(_) => {},
+                Event::AggTrade(_) | Event::Trade(_) | Event::TradeLite(_) => {},
                 Event::Raw(bytes) => info!("{}", bytes),
                 },
 

@@ -19,6 +19,7 @@ use tokio_tungstenite::{
 use url::Url;
 
 use crate::order::Symbol;
+use crate::account::TradeLite;
 
 #[derive(Debug, Serialize, Clone, Display, AsRefStr, EnumString)]
 #[serde(rename_all = "UPPERCASE")]
@@ -67,6 +68,8 @@ pub enum StreamSpec {
     Trade {
         symbol: Symbol,
     },
+
+    TradeLite,
 }
 
 impl StreamSpec {
@@ -83,12 +86,9 @@ impl StreamSpec {
                 (None, Some(i)) => format!("{}@depth@{i}ms", symbol.as_ref().to_lowercase()),
                 (None, None) => format!("{}@depth", symbol.as_ref().to_lowercase()),
             },
-            AggTrade { symbol } => {
-                format!("{}@aggTrade", symbol.as_ref().to_lowercase())
-            }
-            Trade { symbol } => {
-                format!("{}@trade", symbol.as_ref().to_lowercase())
-            }
+            AggTrade { symbol } => format!("{}@aggTrade", symbol.as_ref().to_lowercase()),
+            Trade { symbol } => format!("{}@trade", symbol.as_ref().to_lowercase()),
+            TradeLite => "TRADE_LITE".to_string(),
         }
     }
 }
@@ -100,21 +100,32 @@ pub enum Command {
 }
 
 pub enum Event {
+    // Market streams
     Depth(Depth),
     AggTrade(AggTrade),
     Trade(Trade),
-    Raw(Utf8Bytes), // fallback
+
+    // User streams
+    TradeLite(TradeLite),
+
+    // Fallback
+    Raw(Utf8Bytes),
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "e")]
 enum IncomingPayload {
+    // Market streams
     #[serde(rename = "depthUpdate")]
     Depth(Depth),
     #[serde(rename = "trade")]
     Trade(Trade),
     #[serde(rename = "aggTrade")]
     AggTrade(AggTrade),
+
+    // User streams
+    #[serde(rename = "TRADE_LITE")]
+    TradeLite(TradeLite),
 }
 
 #[derive(Debug)]
@@ -172,6 +183,9 @@ impl WsSession {
                                     Ok(IncomingPayload::Trade(trade)) => {
                                         let _ = session.evt_tx.send(Event::Trade(trade)).await;
                                     }
+                                    Ok(IncomingPayload::TradeLite(trade_lite)) => {
+                                        let _ = session.evt_tx.send(Event::TradeLite(trade_lite)).await;
+                                    }
                                     Err(_) => {
                                         let _ = session.evt_tx.send(Event::Raw(txt)).await;
                                     }
@@ -187,6 +201,9 @@ impl WsSession {
                                     }
                                     Ok(IncomingPayload::Trade(trade)) => {
                                         let _ = session.evt_tx.send(Event::Trade(trade)).await;
+                                    }
+                                    Ok(IncomingPayload::TradeLite(trade_lite)) => {
+                                        let _ = session.evt_tx.send(Event::TradeLite(trade_lite)).await;
                                     }
                                     Err(_) => {
                                         if let Ok(txt) = Utf8Bytes::try_from(bin) {

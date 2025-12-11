@@ -5,3 +5,4 @@ pub mod order;
 pub use binance::request;
 pub use binance::response;
 pub use binance::subscription;
+pub use binance::account;
