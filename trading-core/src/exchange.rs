@@ -3,10 +3,9 @@ use data::{
     config::AccountConfidential,
     order::{Symbol, TimeInForce},
     request::RequestOpen,
-    response,
+    response::OrderSuccessResp,
 };
 use hmac::{Hmac, Mac};
-use openssl::sign;
 use reqwest::{self, Response};
 use serde_json::Value;
 use sha2::Sha256;
@@ -115,7 +114,7 @@ impl Client {
     pub async fn open_order(
         &self,
         request: RequestOpen,
-    ) -> Result<(Response, Uuid), Box<dyn Error>> {
+    ) -> Result<OrderSuccessResp, Box<dyn Error>> {
         match (request.time_in_force, request.good_till_date) {
             (TimeInForce::GoodUntilDate, Some(_)) => {}
             (TimeInForce::GoodUntilDate, None) | (_, Some(_)) => {
@@ -136,7 +135,15 @@ impl Client {
 
         let signed_request = self.sign(&query_string)?;
         let response = self.signed_post("/fapi/v1/order", signed_request).await?;
-        Ok((response, client_id))
+        let status = response.status();
+        let body = response.text().await?;
+
+        if !status.is_success() {
+            return Err(format!("order failed: status {} body {}", status, body).into());
+        }
+
+        let success: OrderSuccessResp = serde_json::from_str(&body)?;
+        Ok(success)
     }
 
     pub async fn cancel_order(&self, client_id: Uuid) -> Result<Response, Box<dyn Error>> {
@@ -203,26 +210,12 @@ mod tests {
         let order_request = make_open_request();
         let client = make_client();
 
-        let (response, client_order_id) = client
+        let success: OrderSuccessResp = client
             .open_order(order_request)
             .await
             .expect("Failed to open order");
 
-        let status = response.status();
-        let body = response.text().await.expect("Failed to read response body");
-        if !status.is_success() {
-            println!("{}", body);
-            panic!("order failed: status {}", status);
-        }
-
-        let success: OrderSuccessResp =
-            serde_json::from_str(&body).expect("Failed to deserialize order response");
-
         assert!(success.order_id > 0, "Invalid orderId");
-        assert_eq!(
-            success.client_order_id, client_order_id,
-            "clientOrderId does not match"
-        );
     }
 
     #[tokio::test()]
@@ -230,20 +223,11 @@ mod tests {
         let order_request = make_open_request();
         let client = make_client();
 
-        let (open_response, client_order_id) = client
+        let success: OrderSuccessResp = client
             .open_order(order_request)
             .await
             .expect("Failed to open order");
-
-        let open_status = open_response.status();
-        let open_body = open_response
-            .text()
-            .await
-            .expect("Failed to read open response body");
-        if !open_status.is_success() {
-            println!("{}", open_body);
-            panic!("order failed: status {}", open_status);
-        }
+        let client_order_id = success.client_order_id;
 
         let cancel_response = client
             .cancel_order(client_order_id)

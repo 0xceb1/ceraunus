@@ -14,7 +14,7 @@ use std::{error::Error, future::Future, pin::Pin};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 #[allow(unused_imports)]
-use tracing::{self, error, info, warn, debug};
+use tracing::{self, debug, error, info, warn};
 use tracing_subscriber;
 #[allow(unused_imports)]
 use trading_core::{
@@ -105,7 +105,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             Some(user_event) = user_evt_rx.recv() => match user_event {
                 Event::TradeLite(trade_lite) => info!("Trade received, {:?}", trade_lite),
                 Event::AggTrade(_) | Event::Trade(_) | Event::Depth(_) => {},
-                Event::Raw(bytes) => info!("{}", bytes),
+                Event::Raw(bytes) => info!("Raw stream received, {}", bytes),
             },
 
 
@@ -157,23 +157,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if elapsed.num_seconds() >= ORDERBOOK_TRIGGER_SECS {
                         let order_request = create_order();
                         match client.open_order(order_request).await {
-                            Ok((response, client_order_id)) => {
-                                let status = response.status();
-                                if status.is_success() {
-                                    match response.json::<OrderSuccessResp>().await {
-                                        Ok(success) => info!(name="Order placed", %client_order_id, order_id=%success.order_id),
-                                        Err(err) => warn!(name="Order decode failed", %client_order_id, %err),
-                                    }
-                                } else {
-                                    match response.text().await {
-                                        Ok(body) => warn!(name="Order rejected", %client_order_id, %status, body),
-                                        Err(err) => warn!(name="Order rejected (body read failed)", %client_order_id, %status, %err),
-                                    }
-                                }
+                            Ok(success) => {
+                                info!(
+                                    name="Open order ACK",
+                                    client_order_id=%success.client_order_id,
+                                    order_id=%success.order_id
+                                );
                                 order_sent = true;
                             }
                             Err(err) => {
-                                warn!(name="Order send failed", %err);
+                                warn!(name="Open order failed", %err);
                             }
                         }
                     }
@@ -183,18 +176,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         }
     }
-
-    //     if cnt > 50 {
-    //         let _ = cmd_tx.send(Command::Shutdown).await;
-    //         break;
-    //     }
-    // }
-
-    // let (response, _client_order_id) = client.open_order(order_request).await?;
-
-    // let success: OrderSuccessResp = response.json().await?;
-    // info!("Order placement ACK: {:?}", success);
-    // Ok(())
 }
 
 fn snapshot_task(
