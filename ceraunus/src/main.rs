@@ -2,7 +2,7 @@
 use data::{
     order::{self, *},
     request::RequestOpen,
-    response::OpenOrderSuccess,
+    response::OrderSuccessResp,
     subscription::{Command, Depth, Event, StreamSpec, WsSession},
 };
 use reqwest;
@@ -151,7 +151,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // let (response, _client_order_id) = client.open_order(order_request).await?;
 
-    // let success: OpenOrderSuccess = response.json().await?;
+    // let success: OrderSuccessResp = response.json().await?;
     // info!("Order placement ACK: {:?}", success);
     // Ok(())
 }
@@ -168,4 +168,3 @@ fn snapshot_task(
         OrderBook::from_snapshot(Symbol::BTCUSDT, depth, TEST_ENDPOINT_REST, http).await
     })
 }
-

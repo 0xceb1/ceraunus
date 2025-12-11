@@ -24,7 +24,6 @@ pub type ClientId = Uuid;
 pub enum OrderKind {
     Limit,
     Market,
-    Stop,
 }
 
 #[derive(
