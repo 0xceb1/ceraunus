@@ -1,18 +1,18 @@
-use serde::Deserialize;
-use chrono::{DateTime, Utc};
 use crate::order::*;
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
+use serde::Deserialize;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
-#[serde(tag="x", rename_all="UPPERCASE")]
+#[serde(tag = "x", rename_all = "UPPERCASE")]
 pub enum OrderTradeUpdate {
     New,
     Canceled,
     Calculated,
     Expired,
     Trade,
-    Amendment
+    Amendment,
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,7 +25,7 @@ pub struct TradeLite {
     #[serde(rename = "s")]
     symbol: Symbol,
     #[serde(rename = "q")]
-    orig_qty: Decimal,    
+    orig_qty: Decimal,
     #[serde(rename = "p")]
     orig_price: Decimal,
     #[serde(rename = "m")]
@@ -33,14 +33,14 @@ pub struct TradeLite {
     #[serde(rename = "c")]
     client_order_id: Uuid,
     #[serde(rename = "S")]
-    side : Side,
+    side: Side,
     #[serde(rename = "L")]
     last_filled_price: Decimal,
     #[serde(rename = "l")]
     last_filled_qty: Decimal,
 
     #[serde(rename = "t")]
-    trade_id: u64, 
+    trade_id: u64,
     #[serde(rename = "i")]
     order_id: u64,
 }

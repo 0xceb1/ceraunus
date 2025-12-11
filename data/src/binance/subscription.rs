@@ -2,11 +2,7 @@ use chrono::{DateTime, Utc};
 use futures_util::{SinkExt, StreamExt};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashSet,
-    convert::TryFrom,
-    fmt,
-};
+use std::{collections::HashSet, convert::TryFrom, fmt};
 use strum_macros::{AsRefStr, Display, EnumString};
 use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_tungstenite::{
@@ -18,8 +14,8 @@ use tokio_tungstenite::{
 };
 use url::Url;
 
-use crate::order::Symbol;
 use crate::account::TradeLite;
+use crate::order::Symbol;
 
 #[derive(Debug, Serialize, Clone, Display, AsRefStr, EnumString)]
 #[serde(rename_all = "UPPERCASE")]

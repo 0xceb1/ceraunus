@@ -1,24 +1,21 @@
+use anyhow::Result;
 use chrono::Utc;
-#[allow(unused_imports)]
 use data::{
-    order::{self, Symbol::SOLUSDT, *},
+    order::{Symbol::SOLUSDT, *},
     request::RequestOpen,
-    response::OrderSuccessResp,
     subscription::{Command, Depth, Event, StreamSpec, WsSession},
 };
 use reqwest;
-#[allow(unused_imports)]
 use rust_decimal::dec;
 use std::time::Duration;
-use std::{error::Error, future::Future, pin::Pin};
+use std::{future::Future, pin::Pin};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 #[allow(unused_imports)]
 use tracing::{self, debug, error, info, warn};
 use tracing_subscriber;
-#[allow(unused_imports)]
 use trading_core::{
-    OrderBook,
+    OrderBook, Result as ClientResult,
     exchange::{Client, TEST_ENDPOINT_REST},
 };
 use url::Url;
@@ -34,7 +31,7 @@ const TEST_ENDPOINT_WS: &'static str = "wss://fstream.binancefuture.com/ws";
 const ENDPOINT_WS: &'static str = "wss://fstream.binance.com/ws";
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<()> {
     // Configure tracing subscriber
     let subscriber = tracing_subscriber::fmt()
         .compact()
@@ -53,8 +50,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .pool_idle_timeout(IDLE_TIMEOUT)
         .build()?;
 
-    let client = Client::new(ACCOUNT_NAME, ACCOUNT_INFO_PATH, SOLUSDT, http.clone())
-        .ok_or("Failed to build client.")?;
+    let client = Client::new(ACCOUNT_NAME, ACCOUNT_INFO_PATH, SOLUSDT, http.clone())?;
 
     let listen_key = client.get_listen_key().await?;
 
@@ -183,7 +179,7 @@ fn snapshot_task(
     http: reqwest::Client,
     depth: u16,
     delay: Duration,
-) -> Pin<Box<dyn Future<Output = Result<OrderBook, Box<dyn Error>>> + Send>> {
+) -> Pin<Box<dyn Future<Output = ClientResult<OrderBook>> + Send>> {
     Box::pin(async move {
         if !delay.is_zero() {
             tokio::time::sleep(delay).await;

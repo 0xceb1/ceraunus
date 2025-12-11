@@ -1,15 +1,16 @@
+use crate::error::{ApiError, ClientError, MessageCodecError, Result};
 use chrono::Utc;
 use data::{
+    DataError,
     config::AccountConfidential,
     order::{Symbol, TimeInForce},
     request::RequestOpen,
     response::OrderSuccessResp,
 };
 use hmac::{Hmac, Mac};
-use reqwest::{self, Response};
+use reqwest::{self, Response, StatusCode};
 use serde_json::Value;
 use sha2::Sha256;
-use std::error::Error;
 use std::path::Path;
 use uuid::Uuid;
 
@@ -27,14 +28,22 @@ pub struct Client {
     endpoint: String,
 }
 
+fn map_api_error(status: StatusCode, body: String) -> ApiError {
+    // TODO: parsing status & body correctly
+    match status {
+        StatusCode::TOO_MANY_REQUESTS => ApiError::RateLimit { status, body },
+        _ => ApiError::Unknown { status, body },
+    }
+}
+
 impl Client {
     pub fn new(
         name: &str,
         csv_path: impl AsRef<Path>,
         symbol: Symbol,
         http_client: reqwest::Client,
-    ) -> Option<Self> {
-        let confidential = AccountConfidential::from_csv(name, csv_path).ok()?;
+    ) -> Result<Self> {
+        let confidential = AccountConfidential::from_csv(name, csv_path)?;
         let client = match confidential.is_testnet {
             true => Self {
                 symbol,
@@ -53,15 +62,16 @@ impl Client {
                 endpoint: String::from(ENDPOINT_REST),
             },
         };
-        Some(client)
+        Ok(client)
     }
 
     fn get_timestamp() -> u64 {
         Utc::now().timestamp_millis() as u64
     }
 
-    pub fn sign(&self, query_string: &str) -> Result<String, Box<dyn Error>> {
-        let mut mac = Hmac::<Sha256>::new_from_slice(self.api_secret.as_bytes())?;
+    pub fn sign(&self, query_string: &str) -> Result<String> {
+        let mut mac = Hmac::<Sha256>::new_from_slice(self.api_secret.as_bytes())
+            .map_err(MessageCodecError::from)?;
         mac.update(query_string.as_bytes());
         let result = mac.finalize();
         let signature = hex::encode(result.into_bytes());
@@ -70,7 +80,7 @@ impl Client {
         Ok(signed_request)
     }
 
-    async fn signed_post(&self, path: &str, body: String) -> Result<Response, Box<dyn Error>> {
+    async fn signed_post(&self, path: &str, body: String) -> Result<Response> {
         let url = format!("{}{}", self.endpoint, path);
         let response = self
             .http_client
@@ -82,7 +92,7 @@ impl Client {
         Ok(response)
     }
 
-    async fn signed_delete(&self, path: &str, body: String) -> Result<Response, Box<dyn Error>> {
+    async fn signed_delete(&self, path: &str, body: String) -> Result<Response> {
         // For Binance signed DELETE endpoints, send the signed query on the URL.
         let url = format!("{}{}?{}", self.endpoint, path, body);
         let response = self
@@ -94,37 +104,42 @@ impl Client {
         Ok(response)
     }
 
-    pub async fn get_listen_key(&self) -> Result<String, Box<dyn Error>> {
+    pub async fn get_listen_key(&self) -> Result<String> {
         let signed_request = self.sign("")?;
-        let body = self
+        let response = self
             .signed_post("/fapi/v1/listenKey", signed_request)
-            .await?
-            .text()
             .await?;
+        let status = response.status();
+        let body = response.text().await?;
+        if !status.is_success() {
+            let api_err = map_api_error(status, body);
+            return Err(ClientError::from(api_err).into());
+        }
 
         let listen_key = serde_json::from_str::<Value>(&body)?
             .get("listenKey")
             .and_then(|v| v.as_str())
-            .ok_or("listenKey field missing")?
+            .ok_or(MessageCodecError::MissingField("listenKey"))?
             .to_string();
 
         Ok(listen_key)
     }
 
-    pub async fn open_order(
-        &self,
-        request: RequestOpen,
-    ) -> Result<OrderSuccessResp, Box<dyn Error>> {
+    pub async fn open_order(&self, request: RequestOpen) -> Result<OrderSuccessResp> {
         match (request.time_in_force, request.good_till_date) {
             (TimeInForce::GoodUntilDate, Some(_)) => {}
             (TimeInForce::GoodUntilDate, None) | (_, Some(_)) => {
-                return Err("Unmatched timeInForce and goodTilDate".into());
+                return Err(DataError::BadDefinition {
+                    reason: "Unmatched timeInForce and goodTilDate",
+                }
+                .into());
             }
             _ => {}
         }
 
         let client_id = Uuid::new_v4();
-        let mut query_string = serde_urlencoded::to_string(&request)?;
+        let mut query_string =
+            serde_urlencoded::to_string(&request).map_err(MessageCodecError::from)?;
 
         // add timestamp & symbol & clienOrderId
         let ts = Self::get_timestamp();
@@ -139,14 +154,15 @@ impl Client {
         let body = response.text().await?;
 
         if !status.is_success() {
-            return Err(format!("order failed: status {} body {}", status, body).into());
+            let api_err = map_api_error(status, body);
+            return Err(ClientError::from(api_err).into());
         }
 
         let success: OrderSuccessResp = serde_json::from_str(&body)?;
         Ok(success)
     }
 
-    pub async fn cancel_order(&self, client_id: Uuid) -> Result<OrderSuccessResp, Box<dyn Error>> {
+    pub async fn cancel_order(&self, client_id: Uuid) -> Result<OrderSuccessResp> {
         let query_string = format!(
             "symbol={}&origClientOrderId={}&timestamp={}",
             self.symbol,
@@ -158,7 +174,8 @@ impl Client {
         let status = response.status();
         let body = response.text().await?;
         if !status.is_success() {
-            return Err(format!("order failed: status {} body {}", status, body).into());
+            let api_err = map_api_error(status, body);
+            return Err(ClientError::from(api_err).into());
         }
 
         let success: OrderSuccessResp = serde_json::from_str(&body)?;
@@ -171,7 +188,7 @@ mod tests {
     use super::*;
     use chrono::{Duration, Utc};
     use data::{
-        order::{OrderKind, Side, TimeInForce, OrderStatus},
+        order::{OrderKind, OrderStatus, Side, TimeInForce},
         response::OrderSuccessResp,
     };
     use rust_decimal::dec;

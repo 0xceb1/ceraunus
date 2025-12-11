@@ -8,8 +8,11 @@ pub enum DataError {
     #[error("deserialization error: {0}")]
     Serde(#[from] serde_json::Error),
 
+    #[error("bad struct definition due to {reason}")]
+    BadDefinition { reason: &'static str },
+
     #[error(transparent)]
-    WebSocket(SocketError)
+    WebSocket(SocketError),
 }
 
 impl From<csv::Error> for DataError {

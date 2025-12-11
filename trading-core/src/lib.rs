@@ -5,10 +5,14 @@ use reqwest;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 use std::collections::BTreeMap;
-use std::error::Error;
 use std::fmt::{self, Formatter};
 
+pub mod error;
 pub mod exchange;
+
+pub use error::{ApiError, ClientError, ConnectivityError, Error, Result};
+
+use crate::error::Result as TCResult;
 
 type Price = Decimal;
 type Quantity = Decimal;
@@ -40,7 +44,7 @@ impl OrderBook {
         depth: u16,
         endpoint: &str,
         client: reqwest::Client,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> TCResult<Self> {
         let url = format!("{endpoint}/fapi/v1/depth?symbol={symbol}&limit={depth}");
         let response = client.get(url).send().await?;
 
@@ -82,7 +86,7 @@ impl OrderBook {
 }
 
 impl fmt::Display for OrderBook {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{} OrderBook (last_update_id: {})",
@@ -105,7 +109,7 @@ struct DepthSnapshot {
 }
 
 /// Deserialize arrays of [price, qty] to BtreeMap.
-fn de_side<'de, D>(deserializer: D) -> Result<BTreeMap<Price, Quantity>, D::Error>
+fn de_side<'de, D>(deserializer: D) -> std::result::Result<BTreeMap<Price, Quantity>, D::Error>
 where
     D: Deserializer<'de>,
 {

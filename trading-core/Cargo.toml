@@ -7,9 +7,11 @@ edition = "2024"
 data = { path = "../data" }
 rust_decimal = { workspace = true, features = ["macros", "serde"] }
 tokio = { workspace = true, features = ["full"] }
-reqwest = { workspace = true, features = ["json"]}
+reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
+url = { workspace = true }
 
 uuid = { workspace = true, features = ["v4"] }
 chrono = { workspace = true }
