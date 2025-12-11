@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use chrono::{DateTime, Utc};
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use rust_decimal::Decimal;
