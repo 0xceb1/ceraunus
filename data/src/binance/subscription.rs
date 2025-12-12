@@ -1,6 +1,4 @@
-use chrono::{DateTime, Utc};
 use futures_util::{SinkExt, StreamExt};
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, convert::TryFrom, fmt};
 use strum_macros::{AsRefStr, Display, EnumString};
@@ -14,7 +12,8 @@ use tokio_tungstenite::{
 };
 use url::Url;
 
-use crate::account::TradeLite;
+use crate::binance::account::TradeLite;
+use crate::binance::market::*;
 use crate::order::Symbol;
 
 #[derive(Debug, Serialize, Clone, Display, AsRefStr, EnumString)]
@@ -90,13 +89,13 @@ impl StreamSpec {
     }
 }
 
-pub enum Command {
+pub enum StreamCommand {
     Subscribe(Vec<StreamSpec>),
     Unsubscribe(Vec<StreamSpec>),
     Shutdown,
 }
 
-pub enum Event {
+pub enum MarketStream {
     // Market streams
     Depth(Depth),
     AggTrade(AggTrade),
@@ -107,6 +106,11 @@ pub enum Event {
 
     // Fallback
     Raw(Utf8Bytes),
+}
+
+#[derive(Debug)]
+pub enum AccountStream {
+    TradeLite(TradeLite),
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,16 +135,16 @@ pub struct WsSession {
     config: WebSocketConfig,
     active: HashSet<StreamSpec>,
     next_id: u64,
-    cmd_rx: mpsc::Receiver<Command>,
-    evt_tx: mpsc::Sender<Event>,
+    cmd_rx: mpsc::Receiver<StreamCommand>,
+    evt_tx: mpsc::Sender<MarketStream>,
 }
 
 impl WsSession {
     pub fn new(
         endpoint: Url,
         config: WebSocketConfig,
-        cmd_rx: mpsc::Receiver<Command>,
-        evt_tx: mpsc::Sender<Event>,
+        cmd_rx: mpsc::Receiver<StreamCommand>,
+        evt_tx: mpsc::Sender<MarketStream>,
     ) -> Self {
         Self {
             endpoint,
@@ -172,39 +176,39 @@ impl WsSession {
                             Some(Ok(Message::Text(txt))) => {
                                 match serde_json::from_str::<IncomingPayload>(&txt) {
                                     Ok(IncomingPayload::Depth(depth)) => {
-                                        let _ = session.evt_tx.send(Event::Depth(depth)).await;
+                                        let _ = session.evt_tx.send(MarketStream::Depth(depth)).await;
                                     }
                                     Ok(IncomingPayload::AggTrade(agg_trade)) => {
-                                        let _ = session.evt_tx.send(Event::AggTrade(agg_trade)).await;
+                                        let _ = session.evt_tx.send(MarketStream::AggTrade(agg_trade)).await;
                                     }
                                     Ok(IncomingPayload::Trade(trade)) => {
-                                        let _ = session.evt_tx.send(Event::Trade(trade)).await;
+                                        let _ = session.evt_tx.send(MarketStream::Trade(trade)).await;
                                     }
                                     Ok(IncomingPayload::TradeLite(trade_lite)) => {
-                                        let _ = session.evt_tx.send(Event::TradeLite(trade_lite)).await;
+                                        let _ = session.evt_tx.send(MarketStream::TradeLite(trade_lite)).await;
                                     }
                                     Err(_) => {
-                                        let _ = session.evt_tx.send(Event::Raw(txt)).await;
+                                        let _ = session.evt_tx.send(MarketStream::Raw(txt)).await;
                                     }
                                 }
                             }
                             Some(Ok(Message::Binary(bin))) => {
                                 match serde_json::from_slice::<IncomingPayload>(&bin) {
                                     Ok(IncomingPayload::Depth(depth)) => {
-                                        let _ = session.evt_tx.send(Event::Depth(depth)).await;
+                                        let _ = session.evt_tx.send(MarketStream::Depth(depth)).await;
                                     }
                                     Ok(IncomingPayload::AggTrade(agg_trade)) => {
-                                        let _ = session.evt_tx.send(Event::AggTrade(agg_trade)).await;
+                                        let _ = session.evt_tx.send(MarketStream::AggTrade(agg_trade)).await;
                                     }
                                     Ok(IncomingPayload::Trade(trade)) => {
-                                        let _ = session.evt_tx.send(Event::Trade(trade)).await;
+                                        let _ = session.evt_tx.send(MarketStream::Trade(trade)).await;
                                     }
                                     Ok(IncomingPayload::TradeLite(trade_lite)) => {
-                                        let _ = session.evt_tx.send(Event::TradeLite(trade_lite)).await;
+                                        let _ = session.evt_tx.send(MarketStream::TradeLite(trade_lite)).await;
                                     }
                                     Err(_) => {
                                         if let Ok(txt) = Utf8Bytes::try_from(bin) {
-                                            let _ = session.evt_tx.send(Event::Raw(txt)).await;
+                                            let _ = session.evt_tx.send(MarketStream::Raw(txt)).await;
                                         }
                                     }
                                 }
@@ -217,14 +221,14 @@ impl WsSession {
                     // if a command sent
                     maybe_cmd = session.cmd_rx.recv() => {
                         match maybe_cmd {
-                            Some(Command::Subscribe(specs)) => {
+                            Some(StreamCommand::Subscribe(specs)) => {
                                 let params: Vec<String> = specs.iter().map(StreamSpec::as_param).collect();
                                 session.active.extend(specs);
                                 let cmd = WsSubscriptionCommand::new("SUBSCRIBE", params, session.next_id);
                                 session.next_id += 1;
                                 let _ = ws_sink.send(Message::Text(cmd.to_string().into())).await;
                             }
-                            Some(Command::Unsubscribe(specs)) => {
+                            Some(StreamCommand::Unsubscribe(specs)) => {
                                 for spec in &specs {
                                     session.active.remove(spec);
                                 }
@@ -233,7 +237,7 @@ impl WsSession {
                                 session.next_id += 1;
                                 let _ = ws_sink.send(Message::Text(cmd.to_string().into())).await;
                             }
-                            Some(Command::Shutdown) => break,
+                            Some(StreamCommand::Shutdown) => break,
                             None => break,
                         }
                     }
@@ -241,85 +245,4 @@ impl WsSession {
             }
         })
     }
-}
-
-#[derive(Clone, Copy, PartialEq, PartialOrd, Debug, Deserialize, Serialize)]
-#[serde(from = "(Decimal, Decimal)")]
-pub struct Level {
-    pub price: Decimal,
-    pub quantity: Decimal,
-}
-
-impl From<(Decimal, Decimal)> for Level {
-    fn from((price, quantity): (Decimal, Decimal)) -> Self {
-        Self { price, quantity }
-    }
-}
-
-/// Payload model for depth update stream, either snapshot or incremental update
-/// https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/Mark-Price-Stream
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Depth {
-    #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
-    pub event_time: DateTime<Utc>,
-    #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]
-    pub transaction_time: DateTime<Utc>,
-    #[serde(rename = "s")]
-    symbol: Symbol,
-    #[serde(rename = "U")]
-    pub first_update_id: u64,
-    #[serde(rename = "u")]
-    pub final_update_id: u64,
-    #[serde(rename = "pu")]
-    pub last_final_update_id: u64,
-    #[serde(rename = "b")]
-    pub bids: Vec<Level>,
-    #[serde(rename = "a")]
-    pub asks: Vec<Level>,
-}
-
-/// Payload model for aggTrade stream
-/// https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/Aggregate-Trade-Streams
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AggTrade {
-    #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
-    event_time: DateTime<Utc>,
-    #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]
-    transaction_time: DateTime<Utc>,
-    #[serde(rename = "s")]
-    symbol: Symbol,
-    #[serde(rename = "a")]
-    agg_trade_id: u64,
-    #[serde(rename = "p")]
-    price: Decimal,
-    #[serde(rename = "q")]
-    quantity: Decimal,
-
-    #[serde(rename = "f")]
-    first_trade_id: u64,
-    #[serde(rename = "l")]
-    last_trade_id: u64,
-    #[serde(rename = "m")]
-    is_buyer_market_maker: bool,
-}
-
-/// Payload model for trade stream
-/// Unfortunately, the trade stream only appears in Binance spot api docs
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Trade {
-    #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
-    event_time: DateTime<Utc>,
-    #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]
-    transaction_time: DateTime<Utc>,
-    #[serde(rename = "s")]
-    symbol: Symbol,
-    #[serde(rename = "t")]
-    trade_id: u64,
-    #[serde(rename = "p")]
-    price: Decimal,
-    #[serde(rename = "q")]
-    quantity: Decimal,
-
-    #[serde(rename = "m")]
-    is_buyer_market_maker: bool,
 }

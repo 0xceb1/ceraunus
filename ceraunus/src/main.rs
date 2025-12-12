@@ -1,9 +1,10 @@
 use anyhow::Result;
 use chrono::Utc;
 use data::{
+    binance::market::Depth,
+    binance::request::RequestOpen,
+    binance::subscription::{MarketStream, StreamCommand, StreamSpec, WsSession},
     order::{Symbol::SOLUSDT, *},
-    request::RequestOpen,
-    subscription::{Command, Depth, Event, StreamSpec, WsSession},
 };
 use reqwest;
 use rust_decimal::dec;
@@ -75,7 +76,7 @@ async fn main() -> Result<()> {
     user_ws.spawn();
 
     cmd_tx
-        .send(Command::Subscribe(vec![StreamSpec::Depth {
+        .send(StreamCommand::Subscribe(vec![StreamSpec::Depth {
             symbol: SOLUSDT,
             levels: None,
             interval_ms: None,
@@ -83,7 +84,7 @@ async fn main() -> Result<()> {
         .await?;
 
     user_cmd_tx
-        .send(Command::Subscribe(vec![StreamSpec::TradeLite]))
+        .send(StreamCommand::Subscribe(vec![StreamSpec::TradeLite]))
         .await?;
 
     info!("----------INITILIAZATION FINISHED----------");
@@ -99,14 +100,14 @@ async fn main() -> Result<()> {
         tokio::select! {
             // WebSocket events received
             Some(user_event) = user_evt_rx.recv() => match user_event {
-                Event::TradeLite(trade_lite) => info!("Trade received, {:?}", trade_lite),
-                Event::AggTrade(_) | Event::Trade(_) | Event::Depth(_) => {},
-                Event::Raw(bytes) => info!("Raw stream received, {}", bytes),
+                MarketStream::TradeLite(trade_lite) => info!("Trade received, {:?}", trade_lite),
+                MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::Depth(_) => {},
+                MarketStream::Raw(bytes) => info!("Raw stream received, {}", bytes),
             },
 
 
             Some(event) = evt_rx.recv() => match event {
-                Event::Depth(depth) => {
+                MarketStream::Depth(depth) => {
                     debug!(name="Depth received", final_update_id = %depth.final_update_id);
                     if let Some(ob) = order_book.as_mut() {
                         if (depth.last_final_update_id..=depth.final_update_id).contains(&ob.last_update_id) {
@@ -127,8 +128,8 @@ async fn main() -> Result<()> {
                     }
                 }
                 // TODO: we still construct the events even if they are immediately dropped
-                Event::AggTrade(_) | Event::Trade(_) | Event::TradeLite(_) => {},
-                Event::Raw(bytes) => info!("{}", bytes),
+                MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::TradeLite(_) => {},
+                MarketStream::Raw(bytes) => info!("{}", bytes),
                 },
 
             // SNAPSHOT done

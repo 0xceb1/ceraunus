@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
+use data::binance::market::Depth;
 use data::order::*;
-use data::subscription::Depth;
 use reqwest::Client;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};

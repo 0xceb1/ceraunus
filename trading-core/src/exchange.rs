@@ -2,10 +2,10 @@ use crate::error::{ApiError, ClientError, MessageCodecError, Result};
 use chrono::Utc;
 use data::{
     DataError,
+    binance::request::RequestOpen,
+    binance::response::OrderSuccessResp,
     config::AccountConfidential,
     order::{Symbol, TimeInForce},
-    request::RequestOpen,
-    response::OrderSuccessResp,
 };
 use hmac::{Hmac, Mac};
 use reqwest::{self, Response, StatusCode};
@@ -188,8 +188,8 @@ mod tests {
     use super::*;
     use chrono::{Duration, Utc};
     use data::{
+        binance::response::OrderSuccessResp,
         order::{OrderKind, OrderStatus, Side, TimeInForce},
-        response::OrderSuccessResp,
     };
     use rust_decimal::dec;
 
