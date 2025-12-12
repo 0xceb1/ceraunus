@@ -131,6 +131,7 @@ async fn main() -> Result<()> {
 
             // Account stream received
             Some(user_event) = acct_evt_rx.recv() => match user_event {
+                AccountStream::OrderTradeUpdate(_) => {},
                 AccountStream::TradeLite(_) => {},
                 AccountStream::Raw(_) => {},
             },

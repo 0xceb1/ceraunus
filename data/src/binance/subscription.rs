@@ -13,7 +13,7 @@ use tokio_tungstenite::{
 use tracing::{debug, info, warn};
 use url::Url;
 
-use crate::binance::account::TradeLite;
+use crate::binance::account::{OrderTradeUpdateEvent, TradeLite};
 use crate::binance::market::*;
 use crate::order::Symbol;
 
@@ -137,6 +137,7 @@ impl ParseStream for MarketStream {
 
 #[derive(Debug)]
 pub enum AccountStream {
+    OrderTradeUpdate(OrderTradeUpdateEvent),
     TradeLite(TradeLite),
     Raw(Utf8Bytes),
 }
@@ -144,6 +145,11 @@ pub enum AccountStream {
 impl ParseStream for AccountStream {
     fn parse(text: &str) -> Self {
         match serde_json::from_str::<AccountPayload>(text) {
+            Ok(AccountPayload::OrderTradeUpdate(order_trade_update)) => {
+                let stream = AccountStream::OrderTradeUpdate(order_trade_update);
+                info!(?stream, "OrderTradeUpdate stream");
+                stream
+            }
             Ok(AccountPayload::TradeLite(trade_lite)) => {
                 let stream = AccountStream::TradeLite(trade_lite);
                 info!(?stream, "TradeLite stream");
@@ -172,6 +178,8 @@ enum MarketPayload {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "e")]
 enum AccountPayload {
+    #[serde(rename = "ORDER_TRADE_UPDATE")]
+    OrderTradeUpdate(OrderTradeUpdateEvent),
     #[serde(rename = "TRADE_LITE")]
     TradeLite(TradeLite),
 }

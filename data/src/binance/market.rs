@@ -60,7 +60,7 @@ pub struct AggTrade {
     #[serde(rename = "l")]
     last_trade_id: u64,
     #[serde(rename = "m")]
-    is_buyer_market_maker: bool,
+    is_maker: bool,
 }
 
 /// Payload model for trade stream
@@ -81,5 +81,5 @@ pub struct Trade {
     quantity: Decimal,
 
     #[serde(rename = "m")]
-    is_buyer_market_maker: bool,
+    is_maker: bool,
 }
