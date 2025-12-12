@@ -29,3 +29,7 @@ criterion = { workspace = true }
 [[bench]]
 name = "event_deser"
 harness = false
+
+[[bench]]
+name = "order_trade_update_deser"
+harness = false
