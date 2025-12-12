@@ -5,7 +5,6 @@ use data::{
     binance::subscription::{AccountStream, MarketStream, StreamCommand, StreamSpec, WsSession},
     order::{Symbol::SOLUSDT, *},
 };
-use reqwest;
 use rust_decimal::{Decimal, dec};
 use std::time::Duration;
 use std::{future::Future, pin::Pin};
@@ -13,7 +12,6 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 #[allow(unused_imports)]
 use tracing::{self, debug, error, info, warn};
-use tracing_appender;
 use tracing_subscriber::{
     self, Layer, Registry, filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt,
 };
@@ -25,15 +23,15 @@ use trading_core::{
 };
 use url::Url;
 
-const ACCOUNT_NAME: &'static str = "test";
-const ACCOUNT_INFO_PATH: &'static str = "./test/test_account_info.csv";
-const LOG_PATH: &'static str = "./logs";
+const ACCOUNT_NAME: &str = "test";
+const ACCOUNT_INFO_PATH: &str = "./test/test_account_info.csv";
+const LOG_PATH: &str = "./logs";
 
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
-const TEST_ENDPOINT_WS: &'static str = "wss://fstream.binancefuture.com/ws";
+const TEST_ENDPOINT_WS: &str = "wss://fstream.binancefuture.com/ws";
 #[allow(dead_code)]
-const ENDPOINT_WS: &'static str = "wss://fstream.binance.com/ws";
+const ENDPOINT_WS: &str = "wss://fstream.binance.com/ws";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -91,7 +89,7 @@ async fn main() -> Result<()> {
     let (acct_evt_tx, mut acct_evt_rx) = mpsc::channel(1024);
 
     let ws = WsSession::market(url, ws_config, cmd_rx, evt_tx);
-    let user_ws = WsSession::account(user_url, ws_config.clone(), acct_cmd_rx, acct_evt_tx);
+    let user_ws = WsSession::account(user_url, ws_config, acct_cmd_rx, acct_evt_tx);
 
     ws.spawn();
     user_ws.spawn();
@@ -144,7 +142,7 @@ async fn main() -> Result<()> {
                         if (depth.last_final_update_id..=depth.final_update_id).contains(&ob.last_update_id()) {
                             // TODO: recheck the gap-detection logic here
                             ob.extend(depth);
-                            if depth_counter % 100 == 0 {
+                            if depth_counter.is_multiple_of(100) {
                                 info!(
                                     last_update_id = %ob.last_update_id(),
                                     bids = %ob.bids().len(),

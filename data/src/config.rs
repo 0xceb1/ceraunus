@@ -31,7 +31,7 @@ impl AccountConfidential {
     }
 
     pub fn is_testnet(&self) -> bool {
-        return self.is_testnet;
+        self.is_testnet
     }
 }
 

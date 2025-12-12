@@ -1,9 +1,9 @@
 use crate::order::*;
+use derive_getters::Getters;
 use derive_more::Constructor;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use derive_getters::Getters;
 
 #[derive(Debug, Copy, Clone, Deserialize, Serialize, Constructor, Getters)]
 pub struct RequestOpen {

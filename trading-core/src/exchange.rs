@@ -125,7 +125,7 @@ impl Client {
         let body = response.text().await?;
         if !status.is_success() {
             let api_err = map_api_error(status, body);
-            return Err(ClientError::from(api_err).into());
+            return Err(ClientError::from(api_err));
         }
 
         let listen_key = serde_json::from_str::<Value>(&body)?
@@ -146,7 +146,7 @@ impl Client {
         let body = response.text().await?;
         if !status.is_success() {
             let api_err = map_api_error(status, body);
-            return Err(ClientError::from(api_err).into());
+            return Err(ClientError::from(api_err));
         }
 
         let listen_key = serde_json::from_str::<Value>(&body)?
@@ -170,6 +170,7 @@ impl Client {
             _ => {}
         }
 
+        // TODO: use copy? maybe benchmark first
         let mut query_string =
             serde_urlencoded::to_string(&request).map_err(MessageCodecError::from)?;
 
@@ -184,7 +185,7 @@ impl Client {
 
         if !status.is_success() {
             let api_err = map_api_error(status, body);
-            return Err(ClientError::from(api_err).into());
+            return Err(ClientError::from(api_err));
         }
 
         let success: OrderSuccessResp = serde_json::from_str(&body)?;
@@ -204,7 +205,7 @@ impl Client {
         let body = response.text().await?;
         if !status.is_success() {
             let api_err = map_api_error(status, body);
-            return Err(ClientError::from(api_err).into());
+            return Err(ClientError::from(api_err));
         }
 
         let success: OrderSuccessResp = serde_json::from_str(&body)?;

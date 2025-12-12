@@ -77,3 +77,9 @@ impl State {
         self.active_orders.keys().next().copied()
     }
 }
+
+impl Default for State {
+    fn default() -> Self {
+        Self::new()
+    }
+}
