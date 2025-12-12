@@ -39,10 +39,10 @@ const ENDPOINT_WS: &'static str = "wss://fstream.binance.com/ws";
 async fn main() -> Result<()> {
     // Configure tracing subscriber
     let file_appender = tracing_appender::rolling::daily(LOG_PATH, "test.log");
-    let (nb_writer, _guard) = tracing_appender::non_blocking(file_appender);
-
+    let (nb_file_writer, _guard1) = tracing_appender::non_blocking(file_appender);
+    let (nb_console_writer, _guard2) = tracing_appender::non_blocking(std::io::stdout());
     let file_layer = fmt::layer()
-        .with_writer(nb_writer)
+        .with_writer(nb_file_writer)
         .with_target(false)
         .with_file(true)
         .with_line_number(true)
@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
         .with_filter(LevelFilter::INFO);
 
     let console_layer = fmt::layer()
-        .with_writer(std::io::stdout)
+        .with_writer(nb_console_writer)
         .with_target(false)
         .with_file(true)
         .with_line_number(true)
@@ -131,8 +131,8 @@ async fn main() -> Result<()> {
 
             // Account stream received
             Some(user_event) = acct_evt_rx.recv() => match user_event {
-                AccountStream::TradeLite(trade_lite) => info!(?trade_lite, "Trade received"),
-                AccountStream::Raw(bytes) => warn!(?bytes, "Raw account stream received"),
+                AccountStream::TradeLite(_) => {},
+                AccountStream::Raw(_) => {},
             },
 
             // Market stream received
@@ -168,8 +168,7 @@ async fn main() -> Result<()> {
                     }
                 }
                 // TODO: we still construct the events even if they are immediately dropped
-                MarketStream::AggTrade(_) | MarketStream::Trade(_) => {},
-                MarketStream::Raw(bytes) => warn!(?bytes, "Raw market stream received"),
+                MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::Raw(_) => {},
             },
 
             // SNAPSHOT done
@@ -245,7 +244,7 @@ fn snapshot_task(
 }
 
 fn create_order() -> RequestOpen {
-    let ts = Utc::now().timestamp_millis() % 10000;
+    let ts = std::cmp::max(Utc::now().timestamp_millis() % 10000, 6969);
 
     RequestOpen::new(
         Side::Buy,

@@ -113,20 +113,24 @@ impl ParseStream for MarketStream {
         match serde_json::from_str::<MarketPayload>(text) {
             Ok(MarketPayload::Depth(depth)) => {
                 let stream = MarketStream::Depth(depth);
-                info!(?stream, "parse to Depth stream");
+                info!(?stream, "Depth stream");
                 stream
             }
             Ok(MarketPayload::AggTrade(agg_trade)) => {
                 let stream = MarketStream::AggTrade(agg_trade);
-                info!(?stream, "parse to AggTrade stream");
+                info!(?stream, "AggTrade stream");
                 stream
             }
             Ok(MarketPayload::Trade(trade)) => {
                 let stream = MarketStream::Trade(trade);
-                info!(?stream, "parse to Trade stream");
+                info!(?stream, "Trade stream");
                 stream
             }
-            Err(_) => MarketStream::Raw(Utf8Bytes::from(text)),
+            Err(_) => {
+                let stream = MarketStream::Raw(Utf8Bytes::from(text));
+                warn!(?stream, "Raw market stream (unparsed)");
+                stream
+            }
         }
     }
 }
@@ -142,10 +146,14 @@ impl ParseStream for AccountStream {
         match serde_json::from_str::<AccountPayload>(text) {
             Ok(AccountPayload::TradeLite(trade_lite)) => {
                 let stream = AccountStream::TradeLite(trade_lite);
-                info!(?stream, "parse to TradeLite stream");
+                info!(?stream, "TradeLite stream");
                 stream
             }
-            Err(_) => AccountStream::Raw(Utf8Bytes::from(text)),
+            Err(_) => {
+                let stream = AccountStream::Raw(Utf8Bytes::from(text));
+                warn!(?stream, "Raw account stream (unparsed)");
+                stream
+            }
         }
     }
 }
