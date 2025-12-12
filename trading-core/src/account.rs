@@ -1,9 +1,10 @@
-use chrono::{DateTime, Utc};
+use chrono::{Date, DateTime, Utc};
 use data::binance::market::Depth;
 use data::order::*;
 use reqwest::Client;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
+use uuid::Uuid;
 use std::collections::BTreeMap;
 use std::fmt::{self, Formatter};
 
@@ -11,6 +12,22 @@ use crate::error::Result as ClientResult;
 
 type Price = Decimal;
 type Quantity = Decimal;
+
+/// Local record for an order
+#[derive(Debug, Clone, Copy)]
+pub struct Order {
+    symbol: Symbol,
+    start_ts: DateTime<Utc> ,
+    order_id: Option<u64>,
+    client_order_id: Uuid,
+    last_update_ts: DateTime<Utc>,
+    
+    kind: OrderKind,
+    price: Decimal,
+    quantity: Decimal,
+    status: Option<OrderStatus>,
+}
+
 
 #[derive(Debug)]
 pub struct OrderBook {
@@ -28,7 +45,7 @@ impl OrderBook {
             symbol,
             local_ts: Utc::now(),
             xchg_ts: Utc::now(),
-            last_update_id: 0,
+            last_update_id: 0, // this is the id for the depth update
             bids: BTreeMap::new(),
             asks: BTreeMap::new(),
         }
