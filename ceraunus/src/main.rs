@@ -7,26 +7,30 @@ use data::{
     order::{Symbol::SOLUSDT, *},
 };
 use reqwest;
-use rust_decimal::dec;
+use rust_decimal::{Decimal, dec};
 use std::time::Duration;
 use std::{future::Future, pin::Pin};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 #[allow(unused_imports)]
 use tracing::{self, debug, error, info, warn};
-use tracing_subscriber;
+use tracing_appender;
+use tracing_subscriber::{
+    self, Layer, Registry, filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt,
+};
 use trading_core::{
     OrderBook, Result as ClientResult,
     exchange::{Client, TEST_ENDPOINT_REST},
 };
 use url::Url;
+use uuid::Uuid;
 
 const ACCOUNT_NAME: &'static str = "test";
 const ACCOUNT_INFO_PATH: &'static str = "./test/test_account_info.csv";
+const LOG_PATH: &'static str = "./logs";
 
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
-const ORDERBOOK_TRIGGER_SECS: i64 = 10;
 const TEST_ENDPOINT_WS: &'static str = "wss://fstream.binancefuture.com/ws";
 #[allow(dead_code)]
 const ENDPOINT_WS: &'static str = "wss://fstream.binance.com/ws";
@@ -34,15 +38,32 @@ const ENDPOINT_WS: &'static str = "wss://fstream.binance.com/ws";
 #[tokio::main]
 async fn main() -> Result<()> {
     // Configure tracing subscriber
-    let subscriber = tracing_subscriber::fmt()
-        .compact()
-        .with_file(false)
-        .with_line_number(false)
-        .with_thread_ids(false)
+    let file_appender = tracing_appender::rolling::daily(LOG_PATH, "test.log");
+    let (nb_writer, _guard) = tracing_appender::non_blocking(file_appender);
+
+    let file_layer = fmt::layer()
+        .with_writer(nb_writer)
         .with_target(false)
-        // .pretty()
-        .finish();
-    tracing::subscriber::set_global_default(subscriber)?;
+        .with_file(true)
+        .with_line_number(true)
+        .with_thread_ids(false)
+        .with_ansi(false)
+        .with_filter(LevelFilter::INFO);
+
+    let console_layer = fmt::layer()
+        .with_writer(std::io::stdout)
+        .with_target(false)
+        .with_file(true)
+        .with_line_number(true)
+        .with_thread_ids(false)
+        .compact()
+        .pretty()
+        .with_filter(LevelFilter::INFO);
+
+    Registry::default()
+        .with(console_layer)
+        .with(file_layer)
+        .init();
 
     // build shared http client
     let http = reqwest::Client::builder()
@@ -92,43 +113,63 @@ async fn main() -> Result<()> {
     let mut depth_buffer: Vec<Depth> = Vec::with_capacity(8);
     let mut order_book: Option<OrderBook> = None;
     let mut snapshot_fut = snapshot_task(SOLUSDT, http.clone(), 1000, Duration::from_millis(1000));
-    let mut order_sent = false;
-    let loop_start = Utc::now();
+    let mut depth_counter: u64 = 0;
+    let mut keepalive_interval = tokio::time::interval(Duration::from_secs(50 * 60));
+    let mut order_interval = tokio::time::interval(Duration::from_secs(10));
+    let mut last_client_order_id: Option<Uuid> = None;
 
     // MAIN EVENT LOOP
     loop {
         tokio::select! {
-            // WebSocket events received
+            // Send keep alive request
+            _ = keepalive_interval.tick() => {
+                match client.keepalive_listen_key().await {
+                    Ok(key) => info!(listen_key=%key, "Listen key keepalive sent"),
+                    Err(err) => warn!(%err, "Listen key keepalive failed"),
+                }
+            }
+
+            // Account stream received
             Some(user_event) = acct_evt_rx.recv() => match user_event {
-                AccountStream::TradeLite(trade_lite) => info!("Trade received, {:?}", trade_lite),
-                AccountStream::Raw(bytes) => info!("Raw stream received, {}", bytes),
+                AccountStream::TradeLite(trade_lite) => info!(?trade_lite, "Trade received"),
+                AccountStream::Raw(bytes) => warn!(?bytes, "Raw account stream received"),
             },
 
-
+            // Market stream received
             Some(event) = evt_rx.recv() => match event {
                 MarketStream::Depth(depth) => {
-                    debug!(name="Depth received", final_update_id = %depth.final_update_id);
+                    depth_counter += 1;
                     if let Some(ob) = order_book.as_mut() {
                         if (depth.last_final_update_id..=depth.final_update_id).contains(&ob.last_update_id) {
                             // TODO: recheck the gap-detection logic here
                             ob.extend(depth);
+                            if depth_counter % 100 == 0 {
+                                info!(
+                                    last_update_id = %ob.last_update_id,
+                                    bids = %ob.bids.len(),
+                                    asks = %ob.asks.len(),
+                                    "Order book depth checkpoint"
+                                );
+                            }
                         } else {
-                            warn!(name="Gap detected in depth updates",
-                                %depth.last_final_update_id,
-                                %depth.first_update_id,
-                                %depth.final_update_id);
+                            warn!(
+                                last_final_update_id = %depth.last_final_update_id,
+                                first_update_id = %depth.first_update_id,
+                                final_update_id = %depth.final_update_id,
+                                "Gap detected in depth updates"
+                            );
                             order_book = None;
                             snapshot_fut = snapshot_task(SOLUSDT, http.clone(), 1000, Duration::from_millis(1000));
                         }
                     } else {
                         // Order book not constructed yet
                         depth_buffer.push(depth);
-                        info!(name="Depth pushed to buffer", buffer_size=%&depth_buffer.len());
+                        info!(buffer_size=%&depth_buffer.len(), "Depth pushed to buffer");
                     }
                 }
                 // TODO: we still construct the events even if they are immediately dropped
                 MarketStream::AggTrade(_) | MarketStream::Trade(_) => {},
-                MarketStream::Raw(bytes) => info!("{}", bytes),
+                MarketStream::Raw(bytes) => warn!(?bytes, "Raw market stream received"),
             },
 
             // SNAPSHOT done
@@ -143,28 +184,43 @@ async fn main() -> Result<()> {
                         ob.extend(depth);
                     }
                 }
-                info!(name="Order book ready", last_update_id=%ob.last_update_id);
+                info!(last_update_id=%ob.last_update_id, "Order book ready");
                 order_book = Some(ob);
             },
 
-            _ = tokio::time::sleep(Duration::from_secs(1)), if !order_sent => {
-                if let Some(ob) = order_book.as_ref() {
-                    let elapsed = ob.xchg_ts.signed_duration_since(loop_start);
-                    if elapsed.num_seconds() >= ORDERBOOK_TRIGGER_SECS {
-                        let order_request = create_order();
-                        match client.open_order(order_request).await {
-                            Ok(success) => {
-                                info!(
-                                    name="Open order ACK",
-                                    client_order_id=%success.client_order_id,
-                                    order_id=%success.order_id
-                                );
-                                order_sent = true;
-                            }
-                            Err(err) => {
-                                warn!(name="Open order failed", %err);
-                            }
+            // cancel stale order and open new order
+            _ = order_interval.tick(), if order_book.is_some() => {
+                if let Some(prev_id) = last_client_order_id {
+                    match client.cancel_order(prev_id).await {
+                        Ok(cancel) => {
+                            info!(
+                                symbol=%cancel.symbol,
+                                price=%cancel.price,
+                                client_order_id=%cancel.client_order_id,
+                                order_id=%cancel.order_id,
+                                "Cancel order ACK"
+                            );
                         }
+                        Err(err) => {
+                            warn!(%err, "Cancel order failed");
+                        }
+                    }
+                }
+
+                let order_request = create_order();
+                match client.open_order(order_request).await {
+                    Ok(success) => {
+                        last_client_order_id = Some(success.client_order_id);
+                        info!(
+                            symbol=%success.symbol,
+                            price=%success.price,
+                            client_order_id=%success.client_order_id,
+                            order_id=%success.order_id,
+                            "Open order ACK"
+                        );
+                    }
+                    Err(err) => {
+                        warn!(%err, "Open order failed");
                     }
                 }
             },
@@ -189,9 +245,11 @@ fn snapshot_task(
 }
 
 fn create_order() -> RequestOpen {
+    let ts = Utc::now().timestamp_millis() % 10000;
+
     RequestOpen::new(
         Side::Buy,
-        dec!(69),
+        Decimal::new(ts, 2),
         dec!(1),
         OrderKind::Limit,
         TimeInForce::GoodUntilCancel,

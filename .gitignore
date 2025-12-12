@@ -1,6 +1,7 @@
 target
 debug
 test
+logs
 
 **/*.rs.bk
 

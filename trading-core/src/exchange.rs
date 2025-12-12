@@ -20,7 +20,7 @@ pub const ENDPOINT_REST: &'static str = "https://fapi.binance.com";
 #[derive(Debug)]
 pub struct Client {
     symbol: Symbol,
-    api_key: String,
+    pub api_key: String,
     api_secret: String,
     #[allow(dead_code)]
     is_testnet: bool,
@@ -92,6 +92,18 @@ impl Client {
         Ok(response)
     }
 
+    async fn signed_put(&self, path: &str, body: String) -> Result<Response> {
+        let url = format!("{}{}", self.endpoint, path);
+        let response = self
+            .http_client
+            .put(url)
+            .header("X-MBX-APIKEY", &self.api_key)
+            .body(body)
+            .send()
+            .await?;
+        Ok(response)
+    }
+
     async fn signed_delete(&self, path: &str, body: String) -> Result<Response> {
         // For Binance signed DELETE endpoints, send the signed query on the URL.
         let url = format!("{}{}?{}", self.endpoint, path, body);
@@ -108,6 +120,27 @@ impl Client {
         let signed_request = self.sign("")?;
         let response = self
             .signed_post("/fapi/v1/listenKey", signed_request)
+            .await?;
+        let status = response.status();
+        let body = response.text().await?;
+        if !status.is_success() {
+            let api_err = map_api_error(status, body);
+            return Err(ClientError::from(api_err).into());
+        }
+
+        let listen_key = serde_json::from_str::<Value>(&body)?
+            .get("listenKey")
+            .and_then(|v| v.as_str())
+            .ok_or(MessageCodecError::MissingField("listenKey"))?
+            .to_string();
+
+        Ok(listen_key)
+    }
+
+    pub async fn keepalive_listen_key(&self) -> Result<String> {
+        let signed_request = self.sign("")?;
+        let response = self
+            .signed_put("/fapi/v1/listenKey", signed_request)
             .await?;
         let status = response.status();
         let body = response.text().await?;

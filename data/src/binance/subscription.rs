@@ -10,7 +10,7 @@ use tokio_tungstenite::{
         protocol::{Message, WebSocketConfig},
     },
 };
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use url::Url;
 
 use crate::binance::account::TradeLite;
@@ -111,9 +111,21 @@ pub enum MarketStream {
 impl ParseStream for MarketStream {
     fn parse(text: &str) -> Self {
         match serde_json::from_str::<MarketPayload>(text) {
-            Ok(MarketPayload::Depth(depth)) => MarketStream::Depth(depth),
-            Ok(MarketPayload::AggTrade(agg_trade)) => MarketStream::AggTrade(agg_trade),
-            Ok(MarketPayload::Trade(trade)) => MarketStream::Trade(trade),
+            Ok(MarketPayload::Depth(depth)) => {
+                let stream = MarketStream::Depth(depth);
+                info!(?stream, "parse to Depth stream");
+                stream
+            }
+            Ok(MarketPayload::AggTrade(agg_trade)) => {
+                let stream = MarketStream::AggTrade(agg_trade);
+                info!(?stream, "parse to AggTrade stream");
+                stream
+            }
+            Ok(MarketPayload::Trade(trade)) => {
+                let stream = MarketStream::Trade(trade);
+                info!(?stream, "parse to Trade stream");
+                stream
+            }
             Err(_) => MarketStream::Raw(Utf8Bytes::from(text)),
         }
     }
@@ -128,7 +140,11 @@ pub enum AccountStream {
 impl ParseStream for AccountStream {
     fn parse(text: &str) -> Self {
         match serde_json::from_str::<AccountPayload>(text) {
-            Ok(AccountPayload::TradeLite(trade_lite)) => AccountStream::TradeLite(trade_lite),
+            Ok(AccountPayload::TradeLite(trade_lite)) => {
+                let stream = AccountStream::TradeLite(trade_lite);
+                info!(?stream, "parse to TradeLite stream");
+                stream
+            }
             Err(_) => AccountStream::Raw(Utf8Bytes::from(text)),
         }
     }
@@ -224,11 +240,11 @@ where
                     maybe_msg = ws_stream.next() => {
                         match maybe_msg {
                             Some(Ok(Message::Text(txt))) => {
-                                info!(target : "Stream received", msg_type = "text");
+                                debug!(msg_type = "text", "WS stream received");
                                 let event = E::parse(&txt);
                                 let _ = session.evt_tx.send(event).await;
                             }
-                            Some(Ok(_)) => {warn!(target : "Stream received", msg_type = "HOLY FUCK");}
+                            Some(Ok(_)) => {warn!(msg_type = "HOLY FUCK", "WS stream received");}
                             Some(Err(_e)) => break,
                             None => break,
                         }

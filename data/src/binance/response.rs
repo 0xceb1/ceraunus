@@ -9,10 +9,10 @@ use crate::order::*;
 #[serde(rename_all = "camelCase")]
 pub struct OrderSuccessResp {
     pub order_id: u64,
-    symbol: Symbol,
+    pub symbol: Symbol,
     pub status: OrderStatus,
     pub client_order_id: Uuid,
-    price: Decimal, // quoted price
+    pub price: Decimal, // quoted price
     // avg_price: Decimal,    // avg filled price
     orig_qty: Decimal,     // initial quoted quantity
     executed_qty: Decimal, // filled quantity
