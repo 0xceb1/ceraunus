@@ -4,14 +4,6 @@ use csv::Reader;
 use serde::{Deserialize, Deserializer};
 use std::path::Path;
 
-fn bool_from_string<'de, D>(deserializer: D) -> std::result::Result<bool, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    Ok(s.eq_ignore_ascii_case("true"))
-}
-
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct AccountConfidential {
@@ -20,7 +12,7 @@ pub struct AccountConfidential {
     pub api_key: String,
     pub api_secret: String,
     #[serde(rename = "testnet", deserialize_with = "bool_from_string")]
-    pub is_testnet: bool,
+    is_testnet: bool,
 }
 
 impl AccountConfidential {
@@ -37,6 +29,18 @@ impl AccountConfidential {
             name: name.to_string(),
         }))
     }
+
+    pub fn is_testnet(&self) -> bool {
+        return self.is_testnet;
+    }
+}
+
+fn bool_from_string<'de, D>(deserializer: D) -> std::result::Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    Ok(s.eq_ignore_ascii_case("true"))
 }
 
 #[cfg(test)]

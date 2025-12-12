@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use data::binance::market::Depth;
 use data::binance::request::RequestOpen;
 use data::order::*;
+use derive_getters::Getters;
 use reqwest::Client;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
@@ -12,12 +13,13 @@ use uuid::Uuid;
 use crate::error::Result as ClientResult;
 
 /// Local record for an order
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Getters)]
 pub struct Order {
     symbol: Symbol,
     side: Side,
     start_ts: DateTime<Utc>,
     order_id: Option<u64>,
+    #[getter(copy)]
     client_order_id: Uuid,
     last_update_ts: DateTime<Utc>,
 
@@ -56,34 +58,6 @@ impl Order {
         }
     }
 
-    pub fn client_order_id(&self) -> Uuid {
-        self.client_order_id
-    }
-
-    pub fn side(&self) -> Side {
-        self.side
-    }
-
-    pub fn price(&self) -> Decimal {
-        self.price
-    }
-
-    pub fn quantity(&self) -> Decimal {
-        self.quantity
-    }
-
-    pub fn kind(&self) -> OrderKind {
-        self.kind
-    }
-
-    pub fn time_in_force(&self) -> TimeInForce {
-        self.time_in_force
-    }
-
-    pub fn good_till_date(&self) -> Option<u64> {
-        self.good_till_date
-    }
-
     pub fn to_request(&self) -> RequestOpen {
         RequestOpen::new(
             self.side,
@@ -99,14 +73,14 @@ impl Order {
 
 type Price = Decimal;
 type Quantity = Decimal;
-#[derive(Debug)]
+#[derive(Debug, Getters)]
 pub struct OrderBook {
     symbol: Symbol,
-    pub local_ts: DateTime<Utc>,
-    pub xchg_ts: DateTime<Utc>,
-    pub last_update_id: u64,
-    pub bids: BTreeMap<Price, Quantity>,
-    pub asks: BTreeMap<Price, Quantity>,
+    local_ts: DateTime<Utc>,
+    xchg_ts: DateTime<Utc>,
+    last_update_id: u64,
+    bids: BTreeMap<Price, Quantity>,
+    asks: BTreeMap<Price, Quantity>,
 }
 
 impl OrderBook {

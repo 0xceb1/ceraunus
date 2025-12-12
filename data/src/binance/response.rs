@@ -1,24 +1,35 @@
 use chrono::{DateTime, Utc};
+use derive_getters::Getters;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::order::*;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Getters)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderSuccessResp {
-    pub order_id: u64,
-    pub symbol: Symbol,
-    pub status: OrderStatus,
-    pub client_order_id: Uuid,
-    pub price: Decimal, // quoted price
+    order_id: u64,
+    #[getter(copy)]
+    symbol: Symbol,
+    #[getter(copy)]
+    status: OrderStatus,
+    #[getter(copy)]
+    client_order_id: Uuid,
+    #[getter(copy)]
+    price: Decimal, // quoted price
     // avg_price: Decimal,    // avg filled price
-    orig_qty: Decimal,     // initial quoted quantity
+    #[getter(copy)]
+    orig_qty: Decimal, // initial quoted quantity
+    #[getter(copy)]
     executed_qty: Decimal, // filled quantity
-    cum_qty: Decimal,      // filled quantity
-    cum_quote: Decimal,    // filled amount in usdt
+    #[getter(copy)]
+    cum_qty: Decimal, // filled quantity
+    #[getter(copy)]
+    cum_quote: Decimal, // filled amount in usdt
+    #[getter(copy)]
     side: Side,
     #[serde(with = "chrono::serde::ts_milliseconds")]
+    #[getter(copy)]
     update_time: DateTime<Utc>,
 }

@@ -3,22 +3,28 @@ use derive_more::Constructor;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use derive_getters::Getters;
 
-#[derive(
-    Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize, Constructor,
-)]
+#[derive(Debug, Copy, Clone, Deserialize, Serialize, Constructor, Getters)]
 pub struct RequestOpen {
-    pub side: Side,
-    pub price: Decimal,
-    pub quantity: Decimal,
+    #[getter(copy)]
+    side: Side,
+    #[getter(copy)]
+    price: Decimal,
+    #[getter(copy)]
+    quantity: Decimal,
+    #[getter(copy)]
     #[serde(rename = "type")]
-    pub kind: OrderKind,
+    kind: OrderKind,
+    #[getter(copy)]
     #[serde(rename = "newClientOrderId")]
-    pub client_order_id: Uuid,
+    client_order_id: Uuid,
+    #[getter(copy)]
     #[serde(rename = "timeInForce")]
-    pub time_in_force: TimeInForce,
+    time_in_force: TimeInForce,
+    #[getter(copy)]
     #[serde(rename = "goodTillDate", skip_serializing_if = "Option::is_none")]
-    pub good_till_date: Option<u64>,
+    good_till_date: Option<u64>,
 }
 
 // #[derive(

@@ -141,14 +141,14 @@ async fn main() -> Result<()> {
                 MarketStream::Depth(depth) => {
                     depth_counter += 1;
                     if let Some(ob) = state.get_order_book_mut(&SOLUSDT) {
-                        if (depth.last_final_update_id..=depth.final_update_id).contains(&ob.last_update_id) {
+                        if (depth.last_final_update_id..=depth.final_update_id).contains(&ob.last_update_id()) {
                             // TODO: recheck the gap-detection logic here
                             ob.extend(depth);
                             if depth_counter % 100 == 0 {
                                 info!(
-                                    last_update_id = %ob.last_update_id,
-                                    bids = %ob.bids.len(),
-                                    asks = %ob.asks.len(),
+                                    last_update_id = %ob.last_update_id(),
+                                    bids = %ob.bids().len(),
+                                    asks = %ob.asks().len(),
                                     "Order book depth checkpoint"
                                 );
                             }
@@ -177,14 +177,14 @@ async fn main() -> Result<()> {
                 let mut ob = snapshot_res?;
 
                 for depth in depth_buffer.drain(..) {
-                    if depth.final_update_id < ob.last_update_id {
+                    if depth.final_update_id < ob.last_update_id() {
                         continue; // too old
                     } else {
                         // TODO: we don't check U <= lastUpdateId AND u >= lastUpdateId here
                         ob.extend(depth);
                     }
                 }
-                info!(last_update_id=%ob.last_update_id, "Order book ready");
+                info!(last_update_id=%ob.last_update_id(), "Order book ready");
                 state.set_order_book(SOLUSDT, ob);
             },
 
@@ -195,10 +195,10 @@ async fn main() -> Result<()> {
                         Ok(cancel) => {
                             state.complete_order(prev_id);
                             info!(
-                                symbol=%cancel.symbol,
-                                price=%cancel.price,
-                                client_order_id=%cancel.client_order_id,
-                                order_id=%cancel.order_id,
+                                symbol=%cancel.symbol(),
+                                price=%cancel.price(),
+                                client_order_id=%cancel.client_order_id(),
+                                order_id=%cancel.order_id(),
                                 "Cancel order ACK"
                             );
                         }
@@ -214,10 +214,10 @@ async fn main() -> Result<()> {
                 match client.open_order(request).await {
                     Ok(success) => {
                         info!(
-                            symbol=%success.symbol,
-                            price=%success.price,
-                            client_order_id=%success.client_order_id,
-                            order_id=%success.order_id,
+                            symbol=%success.symbol(),
+                            price=%success.price(),
+                            client_order_id=%success.client_order_id(),
+                            order_id=%success.order_id(),
                             "Open order ACK"
                         );
                     }

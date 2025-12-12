@@ -12,7 +12,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
-derive-getters = { workspace = true }
+derive-getters = { workspace = true, features = ["auto_copy_getters"]}
 derive_more = { workspace = true }
 
 uuid = { workspace = true, features = ["v4"] }

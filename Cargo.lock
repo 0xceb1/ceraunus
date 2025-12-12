@@ -409,6 +409,7 @@ dependencies = [
  "chrono",
  "criterion",
  "csv",
+ "derive-getters",
  "derive_more",
  "futures-util",
  "openssl",

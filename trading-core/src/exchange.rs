@@ -44,7 +44,7 @@ impl Client {
         http_client: reqwest::Client,
     ) -> Result<Self> {
         let confidential = AccountConfidential::from_csv(name, csv_path)?;
-        let client = match confidential.is_testnet {
+        let client = match confidential.is_testnet() {
             true => Self {
                 symbol,
                 api_key: confidential.api_key,
@@ -158,11 +158,8 @@ impl Client {
         Ok(listen_key)
     }
 
-    pub async fn open_order(
-        &self,
-        request: RequestOpen,
-    ) -> Result<OrderSuccessResp> {
-        match (request.time_in_force, request.good_till_date) {
+    pub async fn open_order(&self, request: RequestOpen) -> Result<OrderSuccessResp> {
+        match (request.time_in_force(), request.good_till_date()) {
             (TimeInForce::GoodUntilDate, Some(_)) => {}
             (TimeInForce::GoodUntilDate, None) | (_, Some(_)) => {
                 return Err(DataError::BadDefinition {
@@ -221,7 +218,7 @@ mod tests {
     use chrono::{Duration, Utc};
     use data::{
         binance::response::OrderSuccessResp,
-        order::{self, OrderKind, OrderStatus, Side, TimeInForce},
+        order::{OrderKind, OrderStatus, Side, TimeInForce},
     };
     use rust_decimal::dec;
 
@@ -238,15 +235,15 @@ mod tests {
     fn make_open_request() -> RequestOpen {
         let gtd = Utc::now() + Duration::minutes(20);
         let gtd = (gtd.timestamp() * 1000) as u64;
-        RequestOpen {
-            side: Side::Buy,
-            price: dec!(69),
-            quantity: dec!(1.0),
-            client_order_id: Uuid::new_v4(),
-            kind: OrderKind::Limit,
-            time_in_force: TimeInForce::GoodUntilDate,
-            good_till_date: Some(gtd),
-        }
+        RequestOpen::new(
+            Side::Buy,
+            dec!(69),
+            dec!(1.0),
+            OrderKind::Limit,
+            Uuid::new_v4(),
+            TimeInForce::GoodUntilDate,
+            Some(gtd),
+        )
     }
 
     #[tokio::test]
@@ -271,14 +268,14 @@ mod tests {
             .await
             .expect("Failed to open order");
 
-        assert!(success.order_id > 0, "Invalid orderId");
+        assert!(success.order_id() > 0, "Invalid orderId");
     }
 
     #[tokio::test()]
     async fn test_cancel_order() {
         let order_request = make_open_request();
         let client = make_client();
-        let client_order_id = order_request.client_order_id;
+        let client_order_id = order_request.client_order_id();
 
         let _success: OrderSuccessResp = client
             .open_order(order_request)
@@ -290,6 +287,6 @@ mod tests {
             .await
             .expect("Failed to cancel order");
 
-        assert_eq!(cancel_success.status, OrderStatus::Canceled);
+        assert_eq!(cancel_success.status(), OrderStatus::Canceled);
     }
 }
