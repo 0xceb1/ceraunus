@@ -10,8 +10,7 @@ use std::fmt::{self, Formatter};
 
 use crate::error::Result as ClientResult;
 
-type Price = Decimal;
-type Quantity = Decimal;
+
 
 /// Local record for an order
 #[derive(Debug, Clone, Copy)]
@@ -28,9 +27,26 @@ pub struct Order {
     status: Option<OrderStatus>,
 }
 
+impl Order {
+    pub fn new(symbol: Symbol, kind: OrderKind, price: Decimal, quantity: Decimal) -> Self {
+        let now = Utc::now();
+        Self {
+            symbol, 
+            start_ts: now,
+            order_id: None,
+            client_order_id: Uuid::new_v4(),
+            last_update_ts: now,
+            kind, price, quantity,
+            status: None,
+        }
+    }
+}
 
+type Price = Decimal;
+type Quantity = Decimal;
 #[derive(Debug)]
 pub struct OrderBook {
+
     symbol: Symbol,
     pub local_ts: DateTime<Utc>,
     pub xchg_ts: DateTime<Utc>,

@@ -28,3 +28,14 @@ pub struct State {
     // current open positions in USDT (Buy, Sell)  
     open_position : (Decimal, Decimal),
 }
+
+impl State {
+    pub fn new() -> Self {
+        Self {
+            order_books : HashMap::with_capacity(1),
+            active_orders : HashMap::with_capacity(64),
+            hist_orders : Vec::with_capacity(256),
+            open_position : (Decimal::new(0,0), Decimal::new(0,0))
+        }
+    }
+}
