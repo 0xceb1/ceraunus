@@ -7,3 +7,7 @@ logs
 
 .vscode
 .idea
+.cursor
+
+CLAUDE.md
+AGENTS.md
