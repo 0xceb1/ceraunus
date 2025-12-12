@@ -1,6 +1,6 @@
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, convert::TryFrom, fmt};
+use std::{collections::HashSet, fmt};
 use strum_macros::{AsRefStr, Display, EnumString};
 use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_tungstenite::{
@@ -10,6 +10,7 @@ use tokio_tungstenite::{
         protocol::{Message, WebSocketConfig},
     },
 };
+use tracing::{info, warn};
 use url::Url;
 
 use crate::binance::account::TradeLite;
@@ -95,56 +96,78 @@ pub enum StreamCommand {
     Shutdown,
 }
 
+pub trait ParseStream: Sized {
+    fn parse(text: &str) -> Self;
+}
+
+#[derive(Debug)]
 pub enum MarketStream {
-    // Market streams
     Depth(Depth),
     AggTrade(AggTrade),
     Trade(Trade),
-
-    // User streams
-    TradeLite(TradeLite),
-
-    // Fallback
     Raw(Utf8Bytes),
+}
+
+impl ParseStream for MarketStream {
+    fn parse(text: &str) -> Self {
+        match serde_json::from_str::<MarketPayload>(text) {
+            Ok(MarketPayload::Depth(depth)) => MarketStream::Depth(depth),
+            Ok(MarketPayload::AggTrade(agg_trade)) => MarketStream::AggTrade(agg_trade),
+            Ok(MarketPayload::Trade(trade)) => MarketStream::Trade(trade),
+            Err(_) => MarketStream::Raw(Utf8Bytes::from(text)),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub enum AccountStream {
     TradeLite(TradeLite),
+    Raw(Utf8Bytes),
+}
+
+impl ParseStream for AccountStream {
+    fn parse(text: &str) -> Self {
+        match serde_json::from_str::<AccountPayload>(text) {
+            Ok(AccountPayload::TradeLite(trade_lite)) => AccountStream::TradeLite(trade_lite),
+            Err(_) => AccountStream::Raw(Utf8Bytes::from(text)),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "e")]
-enum IncomingPayload {
-    // Market streams
+enum MarketPayload {
     #[serde(rename = "depthUpdate")]
     Depth(Depth),
     #[serde(rename = "trade")]
     Trade(Trade),
     #[serde(rename = "aggTrade")]
     AggTrade(AggTrade),
+}
 
-    // User streams
+#[derive(Debug, Deserialize)]
+#[serde(tag = "e")]
+enum AccountPayload {
     #[serde(rename = "TRADE_LITE")]
     TradeLite(TradeLite),
 }
 
 #[derive(Debug)]
-pub struct WsSession {
+pub struct WsSession<E> {
     endpoint: Url,
     config: WebSocketConfig,
     active: HashSet<StreamSpec>,
     next_id: u64,
     cmd_rx: mpsc::Receiver<StreamCommand>,
-    evt_tx: mpsc::Sender<MarketStream>,
+    evt_tx: mpsc::Sender<E>,
 }
 
-impl WsSession {
-    pub fn new(
+impl<E> WsSession<E> {
+    fn new(
         endpoint: Url,
         config: WebSocketConfig,
         cmd_rx: mpsc::Receiver<StreamCommand>,
-        evt_tx: mpsc::Sender<MarketStream>,
+        evt_tx: mpsc::Sender<E>,
     ) -> Self {
         Self {
             endpoint,
@@ -155,7 +178,34 @@ impl WsSession {
             evt_tx,
         }
     }
+}
 
+impl WsSession<MarketStream> {
+    pub fn market(
+        endpoint: Url,
+        config: WebSocketConfig,
+        cmd_rx: mpsc::Receiver<StreamCommand>,
+        evt_tx: mpsc::Sender<MarketStream>,
+    ) -> Self {
+        Self::new(endpoint, config, cmd_rx, evt_tx)
+    }
+}
+
+impl WsSession<AccountStream> {
+    pub fn account(
+        endpoint: Url,
+        config: WebSocketConfig,
+        cmd_rx: mpsc::Receiver<StreamCommand>,
+        evt_tx: mpsc::Sender<AccountStream>,
+    ) -> Self {
+        Self::new(endpoint, config, cmd_rx, evt_tx)
+    }
+}
+
+impl<E> WsSession<E>
+where
+    E: ParseStream + 'static + Send + Sync + fmt::Debug,
+{
     pub fn spawn(self) -> JoinHandle<()> {
         tokio::spawn(async move {
             let mut session = self;
@@ -174,46 +224,11 @@ impl WsSession {
                     maybe_msg = ws_stream.next() => {
                         match maybe_msg {
                             Some(Ok(Message::Text(txt))) => {
-                                match serde_json::from_str::<IncomingPayload>(&txt) {
-                                    Ok(IncomingPayload::Depth(depth)) => {
-                                        let _ = session.evt_tx.send(MarketStream::Depth(depth)).await;
-                                    }
-                                    Ok(IncomingPayload::AggTrade(agg_trade)) => {
-                                        let _ = session.evt_tx.send(MarketStream::AggTrade(agg_trade)).await;
-                                    }
-                                    Ok(IncomingPayload::Trade(trade)) => {
-                                        let _ = session.evt_tx.send(MarketStream::Trade(trade)).await;
-                                    }
-                                    Ok(IncomingPayload::TradeLite(trade_lite)) => {
-                                        let _ = session.evt_tx.send(MarketStream::TradeLite(trade_lite)).await;
-                                    }
-                                    Err(_) => {
-                                        let _ = session.evt_tx.send(MarketStream::Raw(txt)).await;
-                                    }
-                                }
+                                info!(target : "Stream received", msg_type = "text");
+                                let event = E::parse(&txt);
+                                let _ = session.evt_tx.send(event).await;
                             }
-                            Some(Ok(Message::Binary(bin))) => {
-                                match serde_json::from_slice::<IncomingPayload>(&bin) {
-                                    Ok(IncomingPayload::Depth(depth)) => {
-                                        let _ = session.evt_tx.send(MarketStream::Depth(depth)).await;
-                                    }
-                                    Ok(IncomingPayload::AggTrade(agg_trade)) => {
-                                        let _ = session.evt_tx.send(MarketStream::AggTrade(agg_trade)).await;
-                                    }
-                                    Ok(IncomingPayload::Trade(trade)) => {
-                                        let _ = session.evt_tx.send(MarketStream::Trade(trade)).await;
-                                    }
-                                    Ok(IncomingPayload::TradeLite(trade_lite)) => {
-                                        let _ = session.evt_tx.send(MarketStream::TradeLite(trade_lite)).await;
-                                    }
-                                    Err(_) => {
-                                        if let Ok(txt) = Utf8Bytes::try_from(bin) {
-                                            let _ = session.evt_tx.send(MarketStream::Raw(txt)).await;
-                                        }
-                                    }
-                                }
-                            }
-                            Some(Ok(_)) => {}
+                            Some(Ok(_)) => {warn!(target : "Stream received", msg_type = "HOLY FUCK");}
                             Some(Err(_e)) => break,
                             None => break,
                         }

@@ -3,7 +3,7 @@ use chrono::Utc;
 use data::{
     binance::market::Depth,
     binance::request::RequestOpen,
-    binance::subscription::{MarketStream, StreamCommand, StreamSpec, WsSession},
+    binance::subscription::{AccountStream, MarketStream, StreamCommand, StreamSpec, WsSession},
     order::{Symbol::SOLUSDT, *},
 };
 use reqwest;
@@ -66,11 +66,11 @@ async fn main() -> Result<()> {
 
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
     let (evt_tx, mut evt_rx) = mpsc::channel(1024);
-    let (user_cmd_tx, user_cmd_rx) = mpsc::channel(32);
-    let (user_evt_tx, mut user_evt_rx) = mpsc::channel(1024);
+    let (acct_cmd_tx, acct_cmd_rx) = mpsc::channel(32);
+    let (acct_evt_tx, mut acct_evt_rx) = mpsc::channel(1024);
 
-    let ws = WsSession::new(url, ws_config, cmd_rx, evt_tx);
-    let user_ws = WsSession::new(user_url, ws_config.clone(), user_cmd_rx, user_evt_tx);
+    let ws = WsSession::market(url, ws_config, cmd_rx, evt_tx);
+    let user_ws = WsSession::account(user_url, ws_config.clone(), acct_cmd_rx, acct_evt_tx);
 
     ws.spawn();
     user_ws.spawn();
@@ -83,7 +83,7 @@ async fn main() -> Result<()> {
         }]))
         .await?;
 
-    user_cmd_tx
+    acct_cmd_tx
         .send(StreamCommand::Subscribe(vec![StreamSpec::TradeLite]))
         .await?;
 
@@ -99,10 +99,9 @@ async fn main() -> Result<()> {
     loop {
         tokio::select! {
             // WebSocket events received
-            Some(user_event) = user_evt_rx.recv() => match user_event {
-                MarketStream::TradeLite(trade_lite) => info!("Trade received, {:?}", trade_lite),
-                MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::Depth(_) => {},
-                MarketStream::Raw(bytes) => info!("Raw stream received, {}", bytes),
+            Some(user_event) = acct_evt_rx.recv() => match user_event {
+                AccountStream::TradeLite(trade_lite) => info!("Trade received, {:?}", trade_lite),
+                AccountStream::Raw(bytes) => info!("Raw stream received, {}", bytes),
             },
 
 
@@ -128,9 +127,9 @@ async fn main() -> Result<()> {
                     }
                 }
                 // TODO: we still construct the events even if they are immediately dropped
-                MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::TradeLite(_) => {},
+                MarketStream::AggTrade(_) | MarketStream::Trade(_) => {},
                 MarketStream::Raw(bytes) => info!("{}", bytes),
-                },
+            },
 
             // SNAPSHOT done
             snapshot_res = &mut snapshot_fut, if order_book.is_none() => {

@@ -15,6 +15,7 @@ tokio-tungstenite = { workspace = true }
 url = { workspace = true }
 futures-util = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 
 csv = "1.4.0"
 strum = "0.27"
