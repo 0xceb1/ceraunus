@@ -90,6 +90,7 @@ impl StreamSpec {
     }
 }
 
+#[derive(Debug)]
 pub enum StreamCommand {
     Subscribe(Vec<StreamSpec>),
     Unsubscribe(Vec<StreamSpec>),
