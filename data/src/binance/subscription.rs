@@ -248,11 +248,24 @@ where
                     maybe_msg = ws_stream.next() => {
                         match maybe_msg {
                             Some(Ok(Message::Text(txt))) => {
-                                debug!(msg_type = "text", "WS stream received");
+                                debug!(msg_type = "text", "text message received");
                                 let event = E::parse(&txt);
                                 let _ = session.evt_tx.send(event).await;
                             }
-                            Some(Ok(_)) => {warn!(msg_type = "HOLY FUCK", "WS stream received");}
+                            Some(Ok(raw)) => {
+                                let msg_type = match &raw {
+                                    Message::Text(_) => "text",
+                                    Message::Binary(_) => "binary",
+                                    Message::Ping(_) => "ping",
+                                    Message::Pong(_) => "pong",
+                                    Message::Close(_) => "close",
+                                    Message::Frame(_) => "frame",
+                                };
+                                warn!(
+                                    %msg_type, ?raw,
+                                    "unexpected message received"
+                                );
+                            }
                             Some(Err(_e)) => break,
                             None => break,
                         }
