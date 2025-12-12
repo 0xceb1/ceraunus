@@ -2,7 +2,6 @@ use anyhow::Result;
 use chrono::Utc;
 use data::{
     binance::market::Depth,
-    binance::request::RequestOpen,
     binance::subscription::{AccountStream, MarketStream, StreamCommand, StreamSpec, WsSession},
     order::{Symbol::SOLUSDT, *},
 };
@@ -20,10 +19,11 @@ use tracing_subscriber::{
 };
 use trading_core::{
     OrderBook, Result as ClientResult,
+    account::Order,
+    engine::State,
     exchange::{Client, TEST_ENDPOINT_REST},
 };
 use url::Url;
-use uuid::Uuid;
 
 const ACCOUNT_NAME: &'static str = "test";
 const ACCOUNT_INFO_PATH: &'static str = "./test/test_account_info.csv";
@@ -110,13 +110,13 @@ async fn main() -> Result<()> {
 
     info!("----------INITILIAZATION FINISHED----------");
 
+    let mut state: State = State::new();
+
     let mut depth_buffer: Vec<Depth> = Vec::with_capacity(8);
-    let mut order_book: Option<OrderBook> = None;
     let mut snapshot_fut = snapshot_task(SOLUSDT, http.clone(), 1000, Duration::from_millis(1000));
     let mut depth_counter: u64 = 0;
     let mut keepalive_interval = tokio::time::interval(Duration::from_secs(50 * 60));
     let mut order_interval = tokio::time::interval(Duration::from_secs(10));
-    let mut last_client_order_id: Option<Uuid> = None;
 
     // MAIN EVENT LOOP
     loop {
@@ -140,7 +140,7 @@ async fn main() -> Result<()> {
             Some(event) = evt_rx.recv() => match event {
                 MarketStream::Depth(depth) => {
                     depth_counter += 1;
-                    if let Some(ob) = order_book.as_mut() {
+                    if let Some(ob) = state.get_order_book_mut(&SOLUSDT) {
                         if (depth.last_final_update_id..=depth.final_update_id).contains(&ob.last_update_id) {
                             // TODO: recheck the gap-detection logic here
                             ob.extend(depth);
@@ -159,7 +159,7 @@ async fn main() -> Result<()> {
                                 final_update_id = %depth.final_update_id,
                                 "Gap detected in depth updates"
                             );
-                            order_book = None;
+                            state.remove_order_book(&SOLUSDT);
                             snapshot_fut = snapshot_task(SOLUSDT, http.clone(), 1000, Duration::from_millis(1000));
                         }
                     } else {
@@ -173,7 +173,7 @@ async fn main() -> Result<()> {
             },
 
             // SNAPSHOT done
-            snapshot_res = &mut snapshot_fut, if order_book.is_none() => {
+            snapshot_res = &mut snapshot_fut, if !state.has_order_book(&SOLUSDT) => {
                 let mut ob = snapshot_res?;
 
                 for depth in depth_buffer.drain(..) {
@@ -185,14 +185,15 @@ async fn main() -> Result<()> {
                     }
                 }
                 info!(last_update_id=%ob.last_update_id, "Order book ready");
-                order_book = Some(ob);
+                state.set_order_book(SOLUSDT, ob);
             },
 
             // cancel stale order and open new order
-            _ = order_interval.tick(), if order_book.is_some() => {
-                if let Some(prev_id) = last_client_order_id {
+            _ = order_interval.tick(), if state.has_order_book(&SOLUSDT) => {
+                if let Some(prev_id) = state.first_active_id() {
                     match client.cancel_order(prev_id).await {
                         Ok(cancel) => {
+                            state.complete_order(prev_id);
                             info!(
                                 symbol=%cancel.symbol,
                                 price=%cancel.price,
@@ -202,15 +203,16 @@ async fn main() -> Result<()> {
                             );
                         }
                         Err(err) => {
-                            warn!(%err, "Cancel order failed");
+                            error!(%err, "Cancel order failed");
                         }
                     }
                 }
 
-                let order_request = create_order();
-                match client.open_order(order_request).await {
+                let order = create_order();
+                let request = order.to_request();
+                state.track_order(order);
+                match client.open_order(request).await {
                     Ok(success) => {
-                        last_client_order_id = Some(success.client_order_id);
                         info!(
                             symbol=%success.symbol,
                             price=%success.price,
@@ -244,14 +246,15 @@ fn snapshot_task(
     })
 }
 
-fn create_order() -> RequestOpen {
+fn create_order() -> Order {
     let ts = std::cmp::max(Utc::now().timestamp_millis() % 10000, 6969);
 
-    RequestOpen::new(
+    Order::new(
+        SOLUSDT,
         Side::Buy,
+        OrderKind::Limit,
         Decimal::new(ts, 2),
         dec!(1),
-        OrderKind::Limit,
         TimeInForce::GoodUntilCancel,
         None,
     )

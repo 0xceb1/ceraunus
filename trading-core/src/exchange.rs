@@ -65,7 +65,7 @@ impl Client {
         Ok(client)
     }
 
-    fn get_timestamp() -> u64 {
+    fn now_u64() -> u64 {
         Utc::now().timestamp_millis() as u64
     }
 
@@ -158,7 +158,10 @@ impl Client {
         Ok(listen_key)
     }
 
-    pub async fn open_order(&self, request: RequestOpen) -> Result<OrderSuccessResp> {
+    pub async fn open_order(
+        &self,
+        request: RequestOpen,
+    ) -> Result<OrderSuccessResp> {
         match (request.time_in_force, request.good_till_date) {
             (TimeInForce::GoodUntilDate, Some(_)) => {}
             (TimeInForce::GoodUntilDate, None) | (_, Some(_)) => {
@@ -170,16 +173,12 @@ impl Client {
             _ => {}
         }
 
-        let client_id = Uuid::new_v4();
         let mut query_string =
             serde_urlencoded::to_string(&request).map_err(MessageCodecError::from)?;
 
         // add timestamp & symbol & clienOrderId
-        let ts = Self::get_timestamp();
-        query_string.push_str(&format!(
-            "&symbol={}&timestamp={}&newClientOrderId={}",
-            self.symbol, ts, client_id
-        ));
+        let ts = Self::now_u64();
+        query_string.push_str(&format!("&symbol={}&timestamp={}", self.symbol, ts));
 
         let signed_request = self.sign(&query_string)?;
         let response = self.signed_post("/fapi/v1/order", signed_request).await?;
@@ -200,7 +199,7 @@ impl Client {
             "symbol={}&origClientOrderId={}&timestamp={}",
             self.symbol,
             client_id,
-            Self::get_timestamp()
+            Self::now_u64()
         );
         let signed_request = self.sign(&query_string)?;
         let response = self.signed_delete("/fapi/v1/order", signed_request).await?;
@@ -222,7 +221,7 @@ mod tests {
     use chrono::{Duration, Utc};
     use data::{
         binance::response::OrderSuccessResp,
-        order::{OrderKind, OrderStatus, Side, TimeInForce},
+        order::{self, OrderKind, OrderStatus, Side, TimeInForce},
     };
     use rust_decimal::dec;
 
@@ -243,6 +242,7 @@ mod tests {
             side: Side::Buy,
             price: dec!(69),
             quantity: dec!(1.0),
+            client_order_id: Uuid::new_v4(),
             kind: OrderKind::Limit,
             time_in_force: TimeInForce::GoodUntilDate,
             good_till_date: Some(gtd),
@@ -278,12 +278,12 @@ mod tests {
     async fn test_cancel_order() {
         let order_request = make_open_request();
         let client = make_client();
+        let client_order_id = order_request.client_order_id;
 
-        let success: OrderSuccessResp = client
+        let _success: OrderSuccessResp = client
             .open_order(order_request)
             .await
             .expect("Failed to open order");
-        let client_order_id = success.client_order_id;
 
         let cancel_success = client
             .cancel_order(client_order_id)

@@ -2,6 +2,7 @@ use crate::order::*;
 use derive_more::Constructor;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(
     Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize, Serialize, Constructor,
@@ -12,6 +13,8 @@ pub struct RequestOpen {
     pub quantity: Decimal,
     #[serde(rename = "type")]
     pub kind: OrderKind,
+    #[serde(rename = "newClientOrderId")]
+    pub client_order_id: Uuid,
     #[serde(rename = "timeInForce")]
     pub time_in_force: TimeInForce,
     #[serde(rename = "goodTillDate", skip_serializing_if = "Option::is_none")]
