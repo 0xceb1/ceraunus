@@ -6,7 +6,7 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use uuid::Uuid;
 
-#[derive(Debug, Deserialize, Display)]
+#[derive(Debug, Clone, Copy, Deserialize, Display)]
 #[serde(rename_all = "UPPERCASE")]
 #[display(rename_all = "UPPERCASE")]
 pub enum ExecutionType {
@@ -20,7 +20,7 @@ pub enum ExecutionType {
 
 /// Top-level payload model for verbose `ORDER_TRADE_UPDATE` stream
 /// https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Order-Update
-#[derive(Debug, Deserialize, Getters)]
+#[derive(Debug, Clone, Copy, Deserialize, Getters)]
 pub struct OrderTradeUpdateEvent {
     #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
     #[getter(copy)]
@@ -32,7 +32,7 @@ pub struct OrderTradeUpdateEvent {
     update: OrderTradeUpdate,
 }
 
-#[derive(Debug, Deserialize, Getters)]
+#[derive(Debug, Clone, Copy, Deserialize, Getters)]
 pub struct OrderTradeUpdate {
     #[serde(rename = "s")]
     #[getter(copy)]
@@ -109,7 +109,7 @@ pub struct OrderTradeUpdate {
 
 /// Payload model for `TRADE_LITE` stream
 /// https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Trade-Lite
-#[derive(Debug, Deserialize, Getters)]
+#[derive(Debug, Clone, Copy, Deserialize, Getters)]
 #[allow(dead_code)]
 pub struct TradeLite {
     #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
