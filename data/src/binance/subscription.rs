@@ -10,7 +10,7 @@ use tokio_tungstenite::{
         protocol::{Message, WebSocketConfig},
     },
 };
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 use url::Url;
 
 use crate::binance::account::{OrderTradeUpdateEvent, TradeLite};

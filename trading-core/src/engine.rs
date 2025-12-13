@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use uuid::Uuid;
 
 use crate::{
@@ -19,10 +19,10 @@ trait Processor<E> {
 #[derive(Debug)]
 pub struct State {
     // local order book
-    order_books: HashMap<Symbol, OrderBook>,
+    order_books: IndexMap<Symbol, OrderBook>,
 
     // orders that may still receive updates
-    active_orders: HashMap<Uuid, Order>,
+    active_orders: IndexMap<Uuid, Order>,
 
     // TODO: add a buffer for handling rejected orders
 
@@ -36,8 +36,8 @@ pub struct State {
 impl State {
     pub fn new() -> Self {
         Self {
-            order_books: HashMap::with_capacity(1),
-            active_orders: HashMap::with_capacity(64),
+            order_books: IndexMap::with_capacity(1),
+            active_orders: IndexMap::with_capacity(64),
             hist_orders: Vec::with_capacity(256),
             open_position: (Decimal::new(0, 0), Decimal::new(0, 0)),
         }
@@ -57,7 +57,7 @@ impl State {
     }
 
     pub fn remove_order_book(&mut self, symbol: &Symbol) -> Option<OrderBook> {
-        self.order_books.remove(symbol)
+        self.order_books.swap_remove(symbol)
     }
 
     pub fn has_order_book(&self, symbol: &Symbol) -> bool {
@@ -78,13 +78,13 @@ impl State {
     }
 
     pub fn complete_order(&mut self, id: Uuid) {
-        if self.active_orders.remove(&id).is_some() {
+        if self.active_orders.shift_remove(&id).is_some() {
             self.hist_orders.push(id);
         }
     }
 
     pub fn first_active_id(&self) -> Option<Uuid> {
-        self.active_orders.keys().next().copied()
+        self.active_orders.first().map(|(k, _)| *k)
     }
 
     pub fn on_update_received(

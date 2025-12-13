@@ -2253,6 +2253,7 @@ dependencies = [
  "derive_more",
  "hex",
  "hmac",
+ "indexmap",
  "openssl",
  "reqwest",
  "rust_decimal",

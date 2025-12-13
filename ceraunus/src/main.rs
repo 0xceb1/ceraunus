@@ -193,7 +193,8 @@ async fn main() -> Result<()> {
                 if let Some(prev_id) = state.first_active_id() {
                     match client.cancel_order(prev_id).await {
                         Ok(cancel) => {
-                            state.complete_order(prev_id);
+                            // WE trust WS as single source of truth
+                            // state.complete_order(prev_id);
                             info!(
                                 symbol=%cancel.symbol(),
                                 price=%cancel.price(),

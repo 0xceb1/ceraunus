@@ -16,6 +16,7 @@ tracing = { workspace = true }
 derive-getters = { workspace = true, features = ["auto_copy_getters"]}
 derive_more = { workspace = true }
 
+indexmap = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 chrono = { workspace = true }
 
