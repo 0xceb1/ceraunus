@@ -1,4 +1,4 @@
-use crate::error::{ApiError, ClientError, MessageCodecError, Result};
+use crate::error::{ApiError, MessageCodecError, Result, TradingCoreError};
 use chrono::Utc;
 use data::{
     DataError,
@@ -125,7 +125,7 @@ impl Client {
         let body = response.text().await?;
         if !status.is_success() {
             let api_err = map_api_error(status, body);
-            return Err(ClientError::from(api_err));
+            return Err(TradingCoreError::from(api_err));
         }
 
         let listen_key = serde_json::from_str::<Value>(&body)?
@@ -146,7 +146,7 @@ impl Client {
         let body = response.text().await?;
         if !status.is_success() {
             let api_err = map_api_error(status, body);
-            return Err(ClientError::from(api_err));
+            return Err(TradingCoreError::from(api_err));
         }
 
         let listen_key = serde_json::from_str::<Value>(&body)?
@@ -185,7 +185,7 @@ impl Client {
 
         if !status.is_success() {
             let api_err = map_api_error(status, body);
-            return Err(ClientError::from(api_err));
+            return Err(TradingCoreError::from(api_err));
         }
 
         let success: OrderSuccessResp = serde_json::from_str(&body)?;
@@ -205,7 +205,7 @@ impl Client {
         let body = response.text().await?;
         if !status.is_success() {
             let api_err = map_api_error(status, body);
-            return Err(ClientError::from(api_err));
+            return Err(TradingCoreError::from(api_err));
         }
 
         let success: OrderSuccessResp = serde_json::from_str(&body)?;

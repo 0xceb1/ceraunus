@@ -2,8 +2,12 @@ use rust_decimal::Decimal;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::{OrderBook, account::Order};
-use data::order::Symbol;
+use crate::{
+    account::{Order, OrderBook},
+    error::{Result as TradingCoreResult, TradingCoreError},
+};
+use data::{binance::account::OrderTradeUpdateEvent, order::*};
+use tracing::debug;
 
 #[allow(dead_code)]
 trait Processor<E> {
@@ -19,6 +23,8 @@ pub struct State {
 
     // orders that may still receive updates
     active_orders: HashMap<Uuid, Order>,
+
+    // TODO: add a buffer for handling rejected orders
 
     // orders filled/cancelled/failed to sent (life ended)
     hist_orders: Vec<Uuid>,
@@ -67,6 +73,10 @@ impl State {
         self.active_orders.get(id)
     }
 
+    pub fn get_active_order_mut(&mut self, id: &Uuid) -> Option<&mut Order> {
+        self.active_orders.get_mut(id)
+    }
+
     pub fn complete_order(&mut self, id: Uuid) {
         if self.active_orders.remove(&id).is_some() {
             self.hist_orders.push(id);
@@ -75,6 +85,42 @@ impl State {
 
     pub fn first_active_id(&self) -> Option<Uuid> {
         self.active_orders.keys().next().copied()
+    }
+
+    pub fn on_update_received(
+        &mut self,
+        update_event: OrderTradeUpdateEvent,
+    ) -> TradingCoreResult<()> {
+        use data::binance::account::ExecutionType::*;
+        let update = update_event.update();
+        let client_id = update.client_order_id();
+
+        let order =
+            self.active_orders
+                .get_mut(&client_id)
+                .ok_or(TradingCoreError::Unrecoverable(format!(
+                    "Untracked order {}",
+                    client_id
+                )))?; // This should never be an error!
+
+        order.on_update_received(&update_event);
+        match update.exec_type() {
+            reason @ (Canceled | Calculated | Expired) => {
+                debug!(%client_id, %reason, "Order removed");
+                self.complete_order(client_id);
+            }
+            Trade if update.order_status() == OrderStatus::Filled => {
+                debug!(%client_id, reason="TRADE", "Order removed");
+                self.complete_order(client_id);
+            }
+            Amendment if matches!(update.order_status(), OrderStatus::Filled | OrderStatus::Canceled) => {
+                debug!(%client_id, reason="AMENDMENT", "Order removed");
+                self.complete_order(client_id);
+            }
+            _ => {}
+        }
+        // TODO: handling open_position
+        Ok(())
     }
 }
 

@@ -11,6 +11,7 @@ reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 
 derive-getters = { workspace = true, features = ["auto_copy_getters"]}
 derive_more = { workspace = true }

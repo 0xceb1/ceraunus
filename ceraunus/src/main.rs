@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
         .with_line_number(true)
         .with_thread_ids(false)
         .with_ansi(false)
-        .with_filter(LevelFilter::INFO);
+        .with_filter(LevelFilter::DEBUG);
 
     let console_layer = fmt::layer()
         .with_writer(nb_console_writer)
@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
         .with_thread_ids(false)
         .compact()
         .pretty()
-        .with_filter(LevelFilter::INFO);
+        .with_filter(LevelFilter::DEBUG);
 
     Registry::default()
         .with(console_layer)
@@ -103,7 +103,7 @@ async fn main() -> Result<()> {
         .await?;
 
     acct_cmd_tx
-        .send(StreamCommand::Subscribe(vec![StreamSpec::TradeLite]))
+        .send(StreamCommand::Subscribe(vec![StreamSpec::OrderTradeUpdate]))
         .await?;
 
     info!("----------INITILIAZATION FINISHED----------");
@@ -123,13 +123,15 @@ async fn main() -> Result<()> {
             _ = keepalive_interval.tick() => {
                 match client.keepalive_listen_key().await {
                     Ok(key) => info!(listen_key=%key, "Listen key keepalive sent"),
-                    Err(err) => warn!(%err, "Listen key keepalive failed"),
+                    Err(err) => error!(%err, "Listen key keepalive failed"),
                 }
             }
 
             // Account stream received
             Some(user_event) = acct_evt_rx.recv() => match user_event {
-                AccountStream::OrderTradeUpdate(_) => {},
+                AccountStream::OrderTradeUpdate(update_event) => {
+                    state.on_update_received(update_event)?;
+                },
                 AccountStream::TradeLite(_) => {},
                 AccountStream::Raw(_) => {},
             },

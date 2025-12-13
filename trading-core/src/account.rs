@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use data::binance::account::OrderTradeUpdateEvent;
 use data::binance::market::Depth;
 use data::binance::request::RequestOpen;
 use data::order::*;
@@ -9,8 +10,9 @@ use serde::{Deserialize, Deserializer};
 use std::collections::BTreeMap;
 use std::fmt::{self, Formatter};
 use uuid::Uuid;
+use tracing::warn;
 
-use crate::error::Result as ClientResult;
+use crate::error::Result as TradingCoreResult;
 
 /// Local record for an order
 #[derive(Debug, Clone, Copy, Getters)]
@@ -23,9 +25,11 @@ pub struct Order {
     client_order_id: Uuid,
     last_update_ts: DateTime<Utc>,
 
-    kind: OrderKind,
-    price: Decimal,
-    quantity: Decimal,
+    kind: OrderKind, // a limit order can be transformed into market order due to price drift
+    curr_price: Decimal,
+    curr_qty: Decimal,
+    orig_price: Decimal, 
+    orig_qty: Decimal,
     time_in_force: TimeInForce,
     good_till_date: Option<u64>,
     status: Option<OrderStatus>,
@@ -50,8 +54,10 @@ impl Order {
             client_order_id: Uuid::new_v4(),
             last_update_ts: now,
             kind,
-            price,
-            quantity,
+            curr_price: price,
+            curr_qty: quantity,
+            orig_price: price,
+            orig_qty: quantity,
             time_in_force,
             good_till_date,
             status: None,
@@ -61,13 +67,34 @@ impl Order {
     pub fn to_request(&self) -> RequestOpen {
         RequestOpen::new(
             self.side,
-            self.price,
-            self.quantity,
+            self.orig_price,
+            self.orig_qty,
             self.kind,
             self.client_order_id,
             self.time_in_force,
             self.good_till_date,
         )
+    }
+
+    pub fn on_update_received(&mut self, update_event: &OrderTradeUpdateEvent) {
+        // TODO: what timestamp is best here?
+        self.last_update_ts = update_event.transaction_time();
+        let update = update_event.update();
+        self.order_id = Some(update.order_id());
+        self.status = Some(update.order_status());
+        self.curr_price = update.last_filled_price();
+        self.curr_qty = update.last_filled_qty();
+        if update.order_kind() == OrderKind::Market && self.kind == OrderKind::Limit {
+            warn!(
+                client_id = %update.client_order_id(),
+                order_status = %update.order_status(),
+                total_filled_qty = %update.filled_qty(),
+                this_filled_qty = %update.last_filled_qty(),
+                this_filled_price =  %update.last_filled_price(),
+                "A limit order is traded as market order"
+            );
+        }
+        self.kind = update.order_kind();
     }
 }
 
@@ -100,7 +127,7 @@ impl OrderBook {
         depth: u16,
         endpoint: &str,
         client: Client,
-    ) -> ClientResult<Self> {
+    ) -> TradingCoreResult<Self> {
         let url = format!("{endpoint}/fapi/v1/depth?symbol={symbol}&limit={depth}");
         let response = client.get(url).send().await?;
 

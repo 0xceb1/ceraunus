@@ -257,7 +257,7 @@ where
                     maybe_msg = ws_stream.next() => {
                         match maybe_msg {
                             Some(Ok(Message::Text(txt))) => {
-                                debug!(msg_type = "text", "text message received");
+                                // debug!(msg_type = "text", "text message received");
                                 let event = E::parse(&txt);
                                 let _ = session.evt_tx.send(event).await;
                             }

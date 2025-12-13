@@ -4,4 +4,4 @@ pub mod error;
 pub mod exchange;
 
 pub use account::OrderBook;
-pub use error::{ApiError, ClientError, ConnectivityError, Error, Result};
+pub use error::{ApiError, ConnectivityError, Error, Result, TradingCoreError};

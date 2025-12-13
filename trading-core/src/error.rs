@@ -44,7 +44,7 @@ pub enum MessageCodecError {
 }
 
 #[derive(Debug, Error)]
-pub enum ClientError {
+pub enum TradingCoreError {
     #[error(transparent)]
     Api(#[from] ApiError),
 
@@ -59,19 +59,22 @@ pub enum ClientError {
 
     #[error("client initialization failed: {0}")]
     ClientInitialization(String),
+
+    #[error("SOMETHING VERY BAD HAPPENNED :( {0}")]
+    Unrecoverable(String),
 }
 
-impl From<reqwest::Error> for ClientError {
+impl From<reqwest::Error> for TradingCoreError {
     fn from(err: reqwest::Error) -> Self {
-        ClientError::Connectivity(ConnectivityError::Network(err))
+        TradingCoreError::Connectivity(ConnectivityError::Network(err))
     }
 }
 
-impl From<serde_json::Error> for ClientError {
+impl From<serde_json::Error> for TradingCoreError {
     fn from(err: serde_json::Error) -> Self {
-        ClientError::MessageCodec(MessageCodecError::Serde(err))
+        TradingCoreError::MessageCodec(MessageCodecError::Serde(err))
     }
 }
 
-pub type Error = ClientError;
-pub type Result<T> = std::result::Result<T, ClientError>;
+pub type Error = TradingCoreError;
+pub type Result<T> = std::result::Result<T, TradingCoreError>;
