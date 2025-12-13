@@ -10,7 +10,7 @@ use tokio_tungstenite::{
         protocol::{Message, WebSocketConfig},
     },
 };
-use tracing::{info, warn};
+use tracing::warn;
 use url::Url;
 
 use crate::binance::account::{OrderTradeUpdateEvent, TradeLite};
@@ -112,21 +112,9 @@ pub enum MarketStream {
 impl ParseStream for MarketStream {
     fn parse(text: &str) -> Self {
         match serde_json::from_str::<MarketPayload>(text) {
-            Ok(MarketPayload::Depth(depth)) => {
-                let stream = MarketStream::Depth(depth);
-                info!(?stream, "Depth stream");
-                stream
-            }
-            Ok(MarketPayload::AggTrade(agg_trade)) => {
-                let stream = MarketStream::AggTrade(agg_trade);
-                info!(?stream, "AggTrade stream");
-                stream
-            }
-            Ok(MarketPayload::Trade(trade)) => {
-                let stream = MarketStream::Trade(trade);
-                info!(?stream, "Trade stream");
-                stream
-            }
+            Ok(MarketPayload::Depth(depth)) => MarketStream::Depth(depth),
+            Ok(MarketPayload::AggTrade(agg_trade)) => MarketStream::AggTrade(agg_trade),
+            Ok(MarketPayload::Trade(trade)) => MarketStream::Trade(trade),
             Err(_) => {
                 let stream = MarketStream::Raw(Utf8Bytes::from(text));
                 warn!(?stream, "Raw market stream (unparsed)");
@@ -147,15 +135,9 @@ impl ParseStream for AccountStream {
     fn parse(text: &str) -> Self {
         match serde_json::from_str::<AccountPayload>(text) {
             Ok(AccountPayload::OrderTradeUpdate(order_trade_update)) => {
-                let stream = AccountStream::OrderTradeUpdate(order_trade_update);
-                info!(?stream, "OrderTradeUpdate stream");
-                stream
+                AccountStream::OrderTradeUpdate(order_trade_update)
             }
-            Ok(AccountPayload::TradeLite(trade_lite)) => {
-                let stream = AccountStream::TradeLite(trade_lite);
-                info!(?stream, "TradeLite stream");
-                stream
-            }
+            Ok(AccountPayload::TradeLite(trade_lite)) => AccountStream::TradeLite(trade_lite),
             Err(_) => {
                 let stream = AccountStream::Raw(Utf8Bytes::from(text));
                 warn!(?stream, "Raw account stream (unparsed)");
