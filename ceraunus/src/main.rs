@@ -80,8 +80,8 @@ async fn main() -> Result<()> {
 
     let listen_key = client.get_listen_key().await?;
 
-    let url = Url::parse(TEST_ENDPOINT_WS)?;
-    let user_url = Url::parse(&format!("{}/{}", TEST_ENDPOINT_WS, listen_key))?;
+    let mkt_url = Url::parse(TEST_ENDPOINT_WS)?;
+    let acct_url = Url::parse(&format!("{}/{}", TEST_ENDPOINT_WS, listen_key))?;
 
     let ws_config = WebSocketConfig::default()
         .write_buffer_size(0)
@@ -94,11 +94,11 @@ async fn main() -> Result<()> {
     let (acct_cmd_tx, acct_cmd_rx) = mpsc::channel(32);
     let (acct_evt_tx, mut acct_evt_rx) = mpsc::channel(1024);
 
-    let ws = WsSession::market(url, ws_config, cmd_rx, evt_tx);
-    let user_ws = WsSession::account(user_url, ws_config, acct_cmd_rx, acct_evt_tx);
+    let ws = WsSession::market(mkt_url, ws_config, cmd_rx, evt_tx);
+    let acct_ws = WsSession::account(acct_url, ws_config, acct_cmd_rx, acct_evt_tx);
 
     ws.spawn();
-    user_ws.spawn();
+    acct_ws.spawn();
 
     cmd_tx
         .send(StreamCommand::Subscribe(vec![StreamSpec::Depth {
@@ -125,13 +125,7 @@ async fn main() -> Result<()> {
     // MAIN EVENT LOOP
     loop {
         tokio::select! {
-            // Send keep alive request
-            _ = keepalive_interval.tick() => {
-                match client.keepalive_listen_key().await {
-                    Ok(key) => info!(listen_key=%key, "Listen key keepalive sent"),
-                    Err(err) => error!(%err, "Listen key keepalive failed"),
-                }
-            }
+            biased;
 
             // Account stream received
             Some(timed) = acct_evt_rx.recv() => {
@@ -282,6 +276,13 @@ async fn main() -> Result<()> {
                 }
             },
 
+            // Send keep alive request
+            _ = keepalive_interval.tick() => {
+                match client.keepalive_listen_key().await {
+                    Ok(key) => info!(listen_key=%key, "Listen key keepalive sent"),
+                    Err(err) => error!(%err, "Listen key keepalive failed"),
+                }
+            }
 
         }
     }
