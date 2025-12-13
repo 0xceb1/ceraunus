@@ -1,6 +1,6 @@
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fmt};
+use std::{collections::HashSet, fmt, time::Instant};
 use strum_macros::{AsRefStr, Display, EnumString};
 use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_tungstenite::{
@@ -16,6 +16,14 @@ use url::Url;
 use crate::binance::account::{OrderTradeUpdateEvent, TradeLite};
 use crate::binance::market::*;
 use crate::order::Symbol;
+
+/// Timing wrapper for events received from WebSocket
+#[derive(Debug)]
+pub struct Timed<E> {
+    pub event: E,
+    pub recv_instant: Instant,
+    pub parse_duration: std::time::Duration,
+}
 
 #[derive(Debug, Serialize, Clone, Display, AsRefStr, EnumString)]
 #[serde(rename_all = "UPPERCASE")]
@@ -192,7 +200,7 @@ pub struct WsSession<E> {
     active: HashSet<StreamSpec>,
     next_id: u64,
     cmd_rx: mpsc::Receiver<StreamCommand>,
-    evt_tx: mpsc::Sender<E>,
+    evt_tx: mpsc::Sender<Timed<E>>,
 }
 
 impl<E> WsSession<E> {
@@ -200,7 +208,7 @@ impl<E> WsSession<E> {
         endpoint: Url,
         config: WebSocketConfig,
         cmd_rx: mpsc::Receiver<StreamCommand>,
-        evt_tx: mpsc::Sender<E>,
+        evt_tx: mpsc::Sender<Timed<E>>,
     ) -> Self {
         Self {
             endpoint,
@@ -218,7 +226,7 @@ impl WsSession<MarketStream> {
         endpoint: Url,
         config: WebSocketConfig,
         cmd_rx: mpsc::Receiver<StreamCommand>,
-        evt_tx: mpsc::Sender<MarketStream>,
+        evt_tx: mpsc::Sender<Timed<MarketStream>>,
     ) -> Self {
         Self::new(endpoint, config, cmd_rx, evt_tx)
     }
@@ -229,7 +237,7 @@ impl WsSession<AccountStream> {
         endpoint: Url,
         config: WebSocketConfig,
         cmd_rx: mpsc::Receiver<StreamCommand>,
-        evt_tx: mpsc::Sender<AccountStream>,
+        evt_tx: mpsc::Sender<Timed<AccountStream>>,
     ) -> Self {
         Self::new(endpoint, config, cmd_rx, evt_tx)
     }
@@ -257,9 +265,13 @@ where
                     maybe_msg = ws_stream.next() => {
                         match maybe_msg {
                             Some(Ok(Message::Text(txt))) => {
-                                // debug!(msg_type = "text", "text message received");
+                                let recv_instant = Instant::now();
+                                let parse_start = Instant::now();
                                 let event = E::parse(&txt);
-                                let _ = session.evt_tx.send(event).await;
+                                let parse_duration = parse_start.elapsed();
+
+                                let timed = Timed { event, recv_instant, parse_duration };
+                                let _ = session.evt_tx.send(timed).await;
                             }
                             Some(Ok(raw)) => {
                                 let msg_type = match &raw {

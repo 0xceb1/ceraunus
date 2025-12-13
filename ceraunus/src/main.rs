@@ -1,7 +1,7 @@
 // std
 use std::future::Future;
 use std::pin::Pin;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // external crates
 use anyhow::Result;
@@ -134,58 +134,96 @@ async fn main() -> Result<()> {
             }
 
             // Account stream received
-            Some(user_event) = acct_evt_rx.recv() => match user_event {
-                AccountStream::OrderTradeUpdate(update_event) => {
-                    if let Err(err) = state.on_update_received(update_event.clone()) {
-                        error!(
-                            %err,
-                            symbol = %update_event.symbol(),
-                            order_id = %update_event.order_id(),
-                            client_order_id = %update_event.client_order_id(),
-                            exec_type = ?update_event.exec_type(),
-                            order_status = ?update_event.order_status(),
-                            "Failed to process order update"
-                        );         
-                    }
-                },
-                AccountStream::TradeLite(_) => {},
-                AccountStream::Raw(_) => {},
+            Some(timed) = acct_evt_rx.recv() => {
+                let channel_latency = timed.recv_instant.elapsed();
+
+                match timed.event {
+                    AccountStream::OrderTradeUpdate(update_event) => {
+                        let network_latency_ms = Utc::now()
+                            .signed_duration_since(update_event.transaction_time())
+                            .num_milliseconds();
+
+                        let update_start = Instant::now();
+                        let result = state.on_update_received(update_event);
+                        let update_duration = update_start.elapsed();
+
+                        tracing::debug!(
+                            network_ms = network_latency_ms,
+                            parse_us = timed.parse_duration.as_micros(),
+                            channel_us = channel_latency.as_micros(),
+                            update_us = update_duration.as_micros(),
+                            "OrderTradeUpdate stream timing"
+                        );
+
+                        if let Err(err) = result {
+                            error!(
+                                %err,
+                                symbol = %update_event.symbol(),
+                                order_id = %update_event.order_id(),
+                                client_order_id = %update_event.client_order_id(),
+                                exec_type = ?update_event.exec_type(),
+                                order_status = ?update_event.order_status(),
+                                "Failed to process order update"
+                            );
+                        }
+                    },
+                    AccountStream::TradeLite(_) => {},
+                    AccountStream::Raw(_) => {},
+                }
             },
 
             // Market stream received
-            Some(event) = evt_rx.recv() => match event {
-                MarketStream::Depth(depth) => {
-                    depth_counter += 1;
-                    if let Some(ob) = state.get_order_book_mut(&SOLUSDT) {
-                        if (depth.last_final_update_id..=depth.final_update_id).contains(&ob.last_update_id()) {
-                            // TODO: recheck the gap-detection logic here
-                            ob.extend(depth);
-                            if depth_counter.is_multiple_of(100) {
-                                info!(
-                                    last_update_id = %ob.last_update_id(),
-                                    bids = %ob.bids().len(),
-                                    asks = %ob.asks().len(),
-                                    "Order book depth checkpoint"
+            Some(timed) = evt_rx.recv() => {
+                let channel_latency = timed.recv_instant.elapsed();
+
+                match timed.event {
+                    MarketStream::Depth(depth) => {
+                        let network_latency_ms = Utc::now()
+                            .signed_duration_since(depth.transaction_time)
+                            .num_milliseconds();
+
+                        depth_counter += 1;
+                        if let Some(ob) = state.get_order_book_mut(&SOLUSDT) {
+                            if (depth.last_final_update_id..=depth.final_update_id).contains(&ob.last_update_id()) {
+                                let update_start = Instant::now();
+                                ob.extend(depth);
+                                let update_duration = update_start.elapsed();
+
+                                tracing::debug!(
+                                    network_ms = network_latency_ms,
+                                    parse_us = timed.parse_duration.as_micros(),
+                                    channel_us = channel_latency.as_micros(),
+                                    update_us = update_duration.as_micros(),
+                                    "Depth stream timing"
                                 );
+
+                                if depth_counter.is_multiple_of(100) {
+                                    info!(
+                                        last_update_id = %ob.last_update_id(),
+                                        bids = %ob.bids().len(),
+                                        asks = %ob.asks().len(),
+                                        "Order book depth checkpoint"
+                                    );
+                                }
+                            } else {
+                                warn!(
+                                    last_final_update_id = %depth.last_final_update_id,
+                                    first_update_id = %depth.first_update_id,
+                                    final_update_id = %depth.final_update_id,
+                                    "Gap detected in depth updates"
+                                );
+                                state.remove_order_book(&SOLUSDT);
+                                snapshot_fut = snapshot_task(SOLUSDT, http.clone(), 1000, Duration::from_millis(1000));
                             }
                         } else {
-                            warn!(
-                                last_final_update_id = %depth.last_final_update_id,
-                                first_update_id = %depth.first_update_id,
-                                final_update_id = %depth.final_update_id,
-                                "Gap detected in depth updates"
-                            );
-                            state.remove_order_book(&SOLUSDT);
-                            snapshot_fut = snapshot_task(SOLUSDT, http.clone(), 1000, Duration::from_millis(1000));
+                            // Order book not constructed yet
+                            depth_buffer.push(depth);
+                            info!(buffer_size=%&depth_buffer.len(), "Depth pushed to buffer");
                         }
-                    } else {
-                        // Order book not constructed yet
-                        depth_buffer.push(depth);
-                        info!(buffer_size=%&depth_buffer.len(), "Depth pushed to buffer");
                     }
+                    // TODO: we still construct the events even if they are immediately dropped
+                    MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::Raw(_) => {},
                 }
-                // TODO: we still construct the events even if they are immediately dropped
-                MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::Raw(_) => {},
             },
 
             // SNAPSHOT done
@@ -248,7 +286,6 @@ async fn main() -> Result<()> {
         }
     }
 }
-
 
 fn snapshot_task(
     symbol: Symbol,
