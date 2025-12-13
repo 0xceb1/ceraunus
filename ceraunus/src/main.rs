@@ -29,6 +29,7 @@ const LOG_PATH: &str = "./logs";
 
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
+const STALE_ORDER_THRESHOLD: chrono::Duration = chrono::Duration::seconds(30);
 const TEST_ENDPOINT_WS: &str = "wss://fstream.binancefuture.com/ws";
 #[allow(dead_code)]
 const ENDPOINT_WS: &str = "wss://fstream.binance.com/ws";
@@ -188,23 +189,23 @@ async fn main() -> Result<()> {
                 state.set_order_book(SOLUSDT, ob);
             },
 
-            // cancel stale order and open new order
+            // cancel stale orders and open new order
             _ = order_interval.tick(), if state.has_order_book(&SOLUSDT) => {
-                if let Some(prev_id) = state.first_active_id() {
-                    match client.cancel_order(prev_id).await {
+                let stale_ids = state.stale_order_ids(STALE_ORDER_THRESHOLD);
+
+                for stale_id in stale_ids {
+                    match client.cancel_order(stale_id).await {
                         Ok(cancel) => {
-                            // WE trust WS as single source of truth
-                            // state.complete_order(prev_id);
                             info!(
                                 symbol=%cancel.symbol(),
                                 price=%cancel.price(),
                                 client_order_id=%cancel.client_order_id(),
                                 order_id=%cancel.order_id(),
-                                "Cancel order ACK"
+                                "Cancel stale order ACK"
                             );
                         }
                         Err(err) => {
-                            error!(%err, "Cancel order failed");
+                            error!(%err, %stale_id, "Cancel stale order failed");
                         }
                     }
                 }

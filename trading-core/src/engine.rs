@@ -1,5 +1,6 @@
-use rust_decimal::Decimal;
+use chrono::{Utc, Duration};
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::{
@@ -87,6 +88,16 @@ impl State {
         self.active_orders.first().map(|(k, _)| *k)
     }
 
+    pub fn stale_order_ids(&self, max_age: Duration) -> Vec<Uuid> {
+        let now = Utc::now();
+
+        self.active_orders
+            .iter()
+            .take_while(|(_, order)| now.signed_duration_since(*order.start_ts()) >= max_age)
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
     pub fn on_update_received(
         &mut self,
         update_event: OrderTradeUpdateEvent,
@@ -113,7 +124,12 @@ impl State {
                 debug!(%client_id, reason="TRADE", "Order removed");
                 self.complete_order(client_id);
             }
-            Amendment if matches!(update.order_status(), OrderStatus::Filled | OrderStatus::Canceled) => {
+            Amendment
+                if matches!(
+                    update.order_status(),
+                    OrderStatus::Filled | OrderStatus::Canceled
+                ) =>
+            {
                 debug!(%client_id, reason="AMENDMENT", "Order removed");
                 self.complete_order(client_id);
             }
