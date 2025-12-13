@@ -103,8 +103,7 @@ impl State {
         update_event: OrderTradeUpdateEvent,
     ) -> TradingCoreResult<()> {
         use data::binance::account::ExecutionType::*;
-        let update = update_event.update();
-        let client_id = update.client_order_id();
+        let client_id = update_event.client_order_id();
 
         let order =
             self.active_orders
@@ -115,18 +114,18 @@ impl State {
                 )))?; // This should never be an error!
 
         order.on_update_received(&update_event);
-        match update.exec_type() {
+        match update_event.exec_type() {
             reason @ (Canceled | Calculated | Expired) => {
                 debug!(%client_id, %reason, "Order removed");
                 self.complete_order(client_id);
             }
-            Trade if update.order_status() == OrderStatus::Filled => {
+            Trade if update_event.order_status() == OrderStatus::Filled => {
                 debug!(%client_id, reason="TRADE", "Order removed");
                 self.complete_order(client_id);
             }
             Amendment
                 if matches!(
-                    update.order_status(),
+                    update_event.order_status(),
                     OrderStatus::Filled | OrderStatus::Canceled
                 ) =>
             {

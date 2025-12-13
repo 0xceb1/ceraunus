@@ -79,22 +79,21 @@ impl Order {
     pub fn on_update_received(&mut self, update_event: &OrderTradeUpdateEvent) {
         // TODO: what timestamp is best here?
         self.last_update_ts = update_event.transaction_time();
-        let update = update_event.update();
-        self.order_id = Some(update.order_id());
-        self.status = Some(update.order_status());
-        self.curr_price = update.last_filled_price();
-        self.curr_qty = update.last_filled_qty();
-        if update.order_kind() == OrderKind::Market && self.kind == OrderKind::Limit {
+        self.order_id = Some(update_event.order_id());
+        self.status = Some(update_event.order_status());
+        self.curr_price = update_event.last_filled_price();
+        self.curr_qty = update_event.last_filled_qty();
+        if update_event.order_kind() == OrderKind::Market && self.kind == OrderKind::Limit {
             warn!(
-                client_id = %update.client_order_id(),
-                order_status = %update.order_status(),
-                total_filled_qty = %update.filled_qty(),
-                this_filled_qty = %update.last_filled_qty(),
-                this_filled_price =  %update.last_filled_price(),
+                client_id = %update_event.client_order_id(),
+                order_status = %update_event.order_status(),
+                total_filled_qty = %update_event.filled_qty(),
+                this_filled_qty = %update_event.last_filled_qty(),
+                this_filled_price =  %update_event.last_filled_price(),
                 "A limit order is traded as market order"
             );
         }
-        self.kind = update.order_kind();
+        self.kind = update_event.order_kind();
     }
 }
 

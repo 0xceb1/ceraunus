@@ -20,16 +20,104 @@ pub enum ExecutionType {
 
 /// Top-level payload model for verbose `ORDER_TRADE_UPDATE` stream
 /// https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Order-Update
-#[derive(Debug, Clone, Copy, Deserialize, Getters)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 pub struct OrderTradeUpdateEvent {
     #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
-    #[getter(copy)]
     event_time: DateTime<Utc>,
     #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]
-    #[getter(copy)]
     transaction_time: DateTime<Utc>,
     #[serde(rename = "o")]
     update: OrderTradeUpdate,
+}
+
+impl OrderTradeUpdateEvent {
+    pub fn event_time(&self) -> DateTime<Utc> {
+        self.event_time
+    }
+
+    pub fn transaction_time(&self) -> DateTime<Utc> {
+        self.transaction_time
+    }
+
+    pub fn update(&self) -> &OrderTradeUpdate {
+        &self.update
+    }
+
+    pub fn symbol(&self) -> Symbol {
+        self.update.symbol
+    }
+
+    pub fn client_order_id(&self) -> Uuid {
+        self.update.client_order_id
+    }
+
+    pub fn side(&self) -> Side {
+        self.update.side
+    }
+
+    pub fn order_kind(&self) -> OrderKind {
+        self.update.order_kind
+    }
+
+    pub fn time_in_force(&self) -> TimeInForce {
+        self.update.time_in_force
+    }
+
+    pub fn orig_qty(&self) -> Decimal {
+        self.update.orig_qty
+    }
+
+    pub fn orig_price(&self) -> Decimal {
+        self.update.orig_price
+    }
+
+    pub fn avg_price(&self) -> Decimal {
+        self.update.avg_price
+    }
+
+    pub fn exec_type(&self) -> ExecutionType {
+        self.update.exec_type
+    }
+
+    pub fn order_status(&self) -> OrderStatus {
+        self.update.order_status
+    }
+
+    pub fn order_id(&self) -> u64 {
+        self.update.order_id
+    }
+
+    pub fn last_filled_qty(&self) -> Decimal {
+        self.update.last_filled_qty
+    }
+
+    pub fn filled_qty(&self) -> Decimal {
+        self.update.filled_qty
+    }
+
+    pub fn last_filled_price(&self) -> Decimal {
+        self.update.last_filled_price
+    }
+
+    pub fn commission(&self) -> Decimal {
+        self.update.commission
+    }
+
+    pub fn trade_time(&self) -> DateTime<Utc> {
+        self.update.trade_time
+    }
+
+    pub fn trade_id(&self) -> u64 {
+        self.update.trade_id
+    }
+
+    pub fn is_maker(&self) -> bool {
+        self.update.is_maker
+    }
+
+    pub fn realized_profit(&self) -> Decimal {
+        self.update.realized_profit
+    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Getters)]
