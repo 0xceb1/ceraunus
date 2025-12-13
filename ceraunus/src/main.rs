@@ -139,8 +139,8 @@ async fn main() -> Result<()> {
 
                 match timed.event {
                     AccountStream::OrderTradeUpdate(update_event) => {
-                        let network_latency_ms = Utc::now()
-                            .signed_duration_since(update_event.transaction_time())
+                        let network_latency_ms = timed.recv_utc
+                            .signed_duration_since(update_event.event_time())
                             .num_milliseconds();
 
                         let update_start = Instant::now();
@@ -178,8 +178,8 @@ async fn main() -> Result<()> {
 
                 match timed.event {
                     MarketStream::Depth(depth) => {
-                        let network_latency_ms = Utc::now()
-                            .signed_duration_since(depth.transaction_time)
+                        let network_latency_ms = timed.recv_utc
+                            .signed_duration_since(depth.event_time)
                             .num_milliseconds();
 
                         depth_counter += 1;

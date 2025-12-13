@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt, time::Instant};
@@ -22,6 +23,7 @@ use crate::order::Symbol;
 pub struct Timed<E> {
     pub event: E,
     pub recv_instant: Instant,
+    pub recv_utc: DateTime<Utc>,
     pub parse_duration: std::time::Duration,
 }
 
@@ -266,11 +268,12 @@ where
                         match maybe_msg {
                             Some(Ok(Message::Text(txt))) => {
                                 let recv_instant = Instant::now();
+                                let recv_utc = Utc::now();
                                 let parse_start = Instant::now();
                                 let event = E::parse(&txt);
                                 let parse_duration = parse_start.elapsed();
 
-                                let timed = Timed { event, recv_instant, parse_duration };
+                                let timed = Timed { event, recv_instant, recv_utc, parse_duration };
                                 let _ = session.evt_tx.send(timed).await;
                             }
                             Some(Ok(raw)) => {
