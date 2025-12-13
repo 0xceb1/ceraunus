@@ -1,6 +1,7 @@
 // std
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 
 // external crates
@@ -76,7 +77,12 @@ async fn main() -> Result<()> {
         .pool_idle_timeout(IDLE_TIMEOUT)
         .build()?;
 
-    let client = Client::new(ACCOUNT_NAME, ACCOUNT_INFO_PATH, SOLUSDT, http.clone())?;
+    let client = Arc::new(Client::new(
+        ACCOUNT_NAME,
+        ACCOUNT_INFO_PATH,
+        SOLUSDT,
+        http.clone(),
+    )?);
 
     let listen_key = client.get_listen_key().await?;
 
@@ -139,7 +145,7 @@ async fn main() -> Result<()> {
                             exec_type = ?update_event.exec_type(),
                             order_status = ?update_event.order_status(),
                             "Failed to process order update"
-                        );         
+                        );
                     }
                 },
                 AccountStream::TradeLite(_) => {},
@@ -203,53 +209,61 @@ async fn main() -> Result<()> {
                 let stale_ids = state.stale_order_ids(STALE_ORDER_THRESHOLD);
 
                 for stale_id in stale_ids {
-                    match client.cancel_order(stale_id).await {
-                        Ok(cancel) => {
-                            info!(
-                                symbol=%cancel.symbol(),
-                                price=%cancel.price(),
-                                client_order_id=%cancel.client_order_id(),
-                                order_id=%cancel.order_id(),
-                                "Cancel stale order ACK"
-                            );
+                    let client = Arc::clone(&client);
+                    tokio::spawn(async move {
+                        match client.cancel_order(stale_id).await {
+                            Ok(cancel) => {
+                                info!(
+                                    symbol=%cancel.symbol(),
+                                    price=%cancel.price(),
+                                    client_order_id=%cancel.client_order_id(),
+                                    order_id=%cancel.order_id(),
+                                    "Cancel stale order ACK"
+                                );
+                            }
+                            Err(err) => {
+                                error!(%err, %stale_id, "Cancel stale order failed");
+                            }
                         }
-                        Err(err) => {
-                            error!(%err, %stale_id, "Cancel stale order failed");
-                        }
-                    }
+                    });
                 }
 
                 let order = create_order();
                 let request = order.to_request();
                 state.track_order(order);
-                match client.open_order(request).await {
-                    Ok(success) => {
-                        info!(
-                            symbol=%success.symbol(),
-                            price=%success.price(),
-                            client_order_id=%success.client_order_id(),
-                            order_id=%success.order_id(),
-                            "Open order ACK"
-                        );
+                let client = Arc::clone(&client);
+                tokio::spawn(async move {
+                    match client.open_order(request).await {
+                        Ok(success) => {
+                            info!(
+                                symbol=%success.symbol(),
+                                price=%success.price(),
+                                client_order_id=%success.client_order_id(),
+                                order_id=%success.order_id(),
+                                "Open order ACK"
+                            );
+                        }
+                        Err(err) => {
+                            warn!(%err, "Open order failed");
+                        }
                     }
-                    Err(err) => {
-                        warn!(%err, "Open order failed");
-                    }
-                }
+                });
             },
 
             // Send keep alive request
             _ = keepalive_interval.tick() => {
-                match client.keepalive_listen_key().await {
-                    Ok(key) => info!(listen_key=%key, "Listen key keepalive sent"),
-                    Err(err) => error!(%err, "Listen key keepalive failed"),
-                }
+                let client = Arc::clone(&client);
+                tokio::spawn(async move {
+                    match client.keepalive_listen_key().await {
+                        Ok(key) => info!(listen_key=%key, "Listen key keepalive sent"),
+                        Err(err) => error!(%err, "Listen key keepalive failed"),
+                    }
+                });
             }
 
         }
     }
 }
-
 
 fn snapshot_task(
     symbol: Symbol,
