@@ -136,7 +136,17 @@ async fn main() -> Result<()> {
             // Account stream received
             Some(user_event) = acct_evt_rx.recv() => match user_event {
                 AccountStream::OrderTradeUpdate(update_event) => {
-                    state.on_update_received(update_event)?;
+                    if let Err(err) = state.on_update_received(update_event.clone()) {
+                        error!(
+                            %err,
+                            symbol = %update_event.symbol(),
+                            order_id = %update_event.order_id(),
+                            client_order_id = %update_event.client_order_id(),
+                            exec_type = ?update_event.exec_type(),
+                            order_status = ?update_event.order_status(),
+                            "Failed to process order update"
+                        );         
+                    }
                 },
                 AccountStream::TradeLite(_) => {},
                 AccountStream::Raw(_) => {},
@@ -238,6 +248,7 @@ async fn main() -> Result<()> {
         }
     }
 }
+
 
 fn snapshot_task(
     symbol: Symbol,
