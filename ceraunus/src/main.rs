@@ -1,19 +1,25 @@
+// std
+use std::future::Future;
+use std::pin::Pin;
+use std::time::Duration;
+
+// external crates
 use anyhow::Result;
 use chrono::Utc;
+use rust_decimal::{Decimal, dec};
+use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
+use tracing::{error, info, warn};
+use tracing_subscriber::{
+    Layer, Registry, filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt,
+};
+use url::Url;
+
+// Internal crates
 use data::{
     binance::market::Depth,
     binance::subscription::{AccountStream, MarketStream, StreamCommand, StreamSpec, WsSession},
-    order::{Symbol::SOLUSDT, *},
-};
-use rust_decimal::{Decimal, dec};
-use std::time::Duration;
-use std::{future::Future, pin::Pin};
-use tokio::sync::mpsc;
-use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
-#[allow(unused_imports)]
-use tracing::{self, debug, error, info, warn};
-use tracing_subscriber::{
-    self, Layer, Registry, filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt,
+    order::{OrderKind, Side, Symbol, Symbol::SOLUSDT, TimeInForce},
 };
 use trading_core::{
     OrderBook, Result as ClientResult,
@@ -21,14 +27,13 @@ use trading_core::{
     engine::State,
     exchange::{Client, TEST_ENDPOINT_REST},
 };
-use url::Url;
 
 const ACCOUNT_NAME: &str = "test";
 const ACCOUNT_INFO_PATH: &str = "./test/test_account_info.csv";
 const LOG_PATH: &str = "./logs";
 
-const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
-const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
+const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const HTTP_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 const STALE_ORDER_THRESHOLD: chrono::Duration = chrono::Duration::seconds(30);
 const TEST_ENDPOINT_WS: &str = "wss://fstream.binancefuture.com/ws";
 #[allow(dead_code)]

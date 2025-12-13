@@ -9,8 +9,8 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer};
 use std::collections::BTreeMap;
 use std::fmt::{self, Formatter};
-use uuid::Uuid;
 use tracing::warn;
+use uuid::Uuid;
 
 use crate::error::Result as TradingCoreResult;
 
@@ -28,7 +28,7 @@ pub struct Order {
     kind: OrderKind, // a limit order can be transformed into market order due to price drift
     curr_price: Decimal,
     curr_qty: Decimal,
-    orig_price: Decimal, 
+    orig_price: Decimal,
     orig_qty: Decimal,
     time_in_force: TimeInForce,
     good_till_date: Option<u64>,

@@ -1,4 +1,4 @@
-use chrono::{Utc, Duration};
+use chrono::{Duration, Utc};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use uuid::Uuid;
