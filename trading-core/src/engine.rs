@@ -1,13 +1,15 @@
+use std::collections::HashMap;
+
 use chrono::{Duration, Utc};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::{
-    models::{Order, OrderBook},
     error::{Result as TradingCoreResult, TradingCoreError},
+    models::{Order, OrderBook},
 };
-use data::{binance::account::OrderTradeUpdateEvent, order::*};
+use data::{binance::{account::OrderTradeUpdateEvent, market::Level}, order::*};
 use tracing::debug;
 
 #[allow(dead_code)]
@@ -16,11 +18,16 @@ trait Processor<E> {
     fn process(&mut self, event: E) -> Self::Output;
 }
 
+type BboPair = (Level, Level);
+
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct State {
+    // best-available ask & bid
+    bbo_levels: HashMap<Symbol, BboPair>, // (bid_level, ask_level)
+
     // local order book
-    order_books: IndexMap<Symbol, OrderBook>,
+    order_books: HashMap<Symbol, OrderBook>,
 
     // orders that may still receive updates
     active_orders: IndexMap<Uuid, Order>,
@@ -37,7 +44,8 @@ pub struct State {
 impl State {
     pub fn new() -> Self {
         Self {
-            order_books: IndexMap::with_capacity(1),
+            bbo_levels: HashMap::with_capacity(1),
+            order_books: HashMap::with_capacity(1),
             active_orders: IndexMap::with_capacity(64),
             hist_orders: Vec::with_capacity(256),
             open_position: (Decimal::new(0, 0), Decimal::new(0, 0)),
@@ -45,6 +53,18 @@ impl State {
     }
 
     // Order book management
+    pub fn get_bbo_level(&self, symbol: &Symbol) -> Option<BboPair> {
+        self.bbo_levels.get(symbol).copied()
+    }
+
+    pub fn get_bbo_level_mut(&mut self, symbol: &Symbol) -> Option<&mut BboPair> {
+        self.bbo_levels.get_mut(symbol)
+    }
+
+    pub fn set_bbo_level(&mut self, symbol: Symbol, new_level: BboPair) -> Option<BboPair> {
+        self.bbo_levels.insert(symbol, new_level)
+    }
+
     pub fn get_order_book(&self, symbol: &Symbol) -> Option<&OrderBook> {
         self.order_books.get(symbol)
     }
@@ -58,7 +78,7 @@ impl State {
     }
 
     pub fn remove_order_book(&mut self, symbol: &Symbol) -> Option<OrderBook> {
-        self.order_books.swap_remove(symbol)
+        self.order_books.remove(symbol)
     }
 
     pub fn has_order_book(&self, symbol: &Symbol) -> bool {
@@ -66,7 +86,7 @@ impl State {
     }
 
     // Active order tracking
-    pub fn track_order(&mut self, order: Order) {
+    pub fn register_order(&mut self, order: Order) {
         self.active_orders.insert(order.client_order_id(), order);
     }
 

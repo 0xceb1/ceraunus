@@ -266,7 +266,7 @@ async fn main() -> Result<()> {
             Event::SendOrderTick => {
                 let order = create_order();
                 let request = order.to_request();
-                state.track_order(order);
+                state.register_order(order);
                 let client = Arc::clone(&client);
                 tokio::spawn(async move {
                     match client.open_order(request).await {
