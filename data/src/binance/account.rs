@@ -226,3 +226,29 @@ pub struct TradeLite {
     #[serde(rename = "i")]
     order_id: u64,
 }
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AccountEventType {
+    Deposit,
+    Withdraw,
+    Order,
+    FundingFee,
+    WithdrawReject,
+    Adjustment,
+    InsuranceClear,
+    AdminDeposit,
+    AdminWithdraw,
+    MarginTransfer,
+    MarginTypeChange,
+    AssetTransfer,
+    OptionsPremiumFee,
+    OptionsSettleProfit,
+    AutoExchange,
+    CoinSwapDeposit,
+    CoinSwapWithdraw,
+}
+
+pub struct AccountUpdate {
+
+}
