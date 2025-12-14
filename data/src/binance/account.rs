@@ -227,8 +227,9 @@ pub struct TradeLite {
     order_id: u64,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Display)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[display(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AccountEventType {
     Deposit,
     Withdraw,
@@ -249,6 +250,128 @@ pub enum AccountEventType {
     CoinSwapWithdraw,
 }
 
-pub struct AccountUpdate {
+/// Top-level payload model for `ACCOUNT_UPDATE` stream
+/// https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Balance-and-Position-Update
+#[derive(Debug, Clone, Deserialize)]
+pub struct AccountUpdateEvent {
+    #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
+    event_time: DateTime<Utc>,
+    #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]
+    transaction_time: DateTime<Utc>,
+    #[serde(rename = "a")]
+    update: AccountUpdate,
+}
 
+impl AccountUpdateEvent {
+    pub fn event_time(&self) -> DateTime<Utc> {
+        self.event_time
+    }
+
+    pub fn transaction_time(&self) -> DateTime<Utc> {
+        self.transaction_time
+    }
+
+    pub fn update(&self) -> &AccountUpdate {
+        &self.update
+    }
+
+    pub fn reason(&self) -> AccountEventType {
+        self.update.reason
+    }
+
+    pub fn balances(&self) -> &[BalanceUpdate] {
+        &self.update.balances
+    }
+
+    pub fn positions(&self) -> &[PositionUpdate] {
+        &self.update.positions
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Getters)]
+pub struct AccountUpdate {
+    #[serde(rename = "m")]
+    #[getter(copy)]
+    reason: AccountEventType,
+
+    #[serde(rename = "B", default)]
+    balances: Vec<BalanceUpdate>,
+
+    #[serde(rename = "P", default)]
+    positions: Vec<PositionUpdate>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Getters)]
+pub struct BalanceUpdate {
+    #[serde(rename = "a")]
+    #[getter(copy)]
+    asset: Asset,
+
+    #[serde(rename = "wb")]
+    #[getter(copy)]
+    wallet_balance: Decimal,
+
+    #[serde(rename = "cw")]
+    #[getter(copy)]
+    cross_wallet_balance: Decimal,
+
+    #[serde(rename = "bc")]
+    #[getter(copy)]
+    balance_change: Decimal, // Balance change except PnL and commission
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Display)]
+#[serde(rename_all = "lowercase")]
+#[display(rename_all = "lowercase")]
+pub enum MarginType {
+    Isolated,
+    Cross,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Display)]
+#[serde(rename_all = "UPPERCASE")]
+#[display(rename_all = "UPPERCASE")]
+pub enum PositionSide {
+    Both,
+    Long,
+    Short,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Getters)]
+pub struct PositionUpdate {
+    #[serde(rename = "s")]
+    #[getter(copy)]
+    symbol: Symbol,
+
+    #[serde(rename = "pa")]
+    #[getter(copy)]
+    position_amount: Decimal,
+
+    #[serde(rename = "ep")]
+    #[getter(copy)]
+    entry_price: Decimal,
+
+    #[serde(rename = "bep")]
+    #[getter(copy)]
+    breakeven_price: Decimal,
+
+    #[serde(rename = "cr")]
+    #[getter(copy)]
+    accumulated_realized: Decimal, // (Pre-fee) Accumulated realized
+
+    #[serde(rename = "up")]
+    #[getter(copy)]
+    unrealized_pnl: Decimal,
+
+    #[serde(rename = "mt")]
+    #[getter(copy)]
+    margin_type: MarginType,
+
+    #[serde(rename = "iw")]
+    #[getter(copy)]
+    isolated_wallet: Decimal,
+
+    #[serde(rename = "ps")]
+    #[getter(copy)]
+    position_side: PositionSide,
 }

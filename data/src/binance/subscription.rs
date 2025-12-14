@@ -14,7 +14,7 @@ use tokio_tungstenite::{
 use tracing::warn;
 use url::Url;
 
-use crate::binance::account::{OrderTradeUpdateEvent, TradeLite};
+use crate::binance::account::{AccountUpdateEvent, OrderTradeUpdateEvent, TradeLite};
 use crate::binance::market::*;
 use crate::order::Symbol;
 
@@ -76,6 +76,7 @@ pub enum StreamSpec {
     },
     OrderTradeUpdate,
     TradeLite,
+    AccountUpdate,
 }
 
 impl StreamSpec {
@@ -96,6 +97,7 @@ impl StreamSpec {
             Trade { symbol } => format!("{}@trade", symbol.as_ref().to_lowercase()),
             TradeLite => "TRADE_LITE".to_string(),
             OrderTradeUpdate => "ORDER_TRADE_UPDATE".to_string(),
+            AccountUpdate => "ACCOUNT_UPDATE".to_string(),
         }
     }
 }
@@ -138,6 +140,7 @@ impl ParseStream for MarketStream {
 pub enum AccountStream {
     OrderTradeUpdate(OrderTradeUpdateEvent),
     TradeLite(TradeLite),
+    AccountUpdate(AccountUpdateEvent),
     Raw(Utf8Bytes),
 }
 
@@ -148,6 +151,9 @@ impl ParseStream for AccountStream {
                 AccountStream::OrderTradeUpdate(order_trade_update)
             }
             Ok(AccountPayload::TradeLite(trade_lite)) => AccountStream::TradeLite(trade_lite),
+            Ok(AccountPayload::AccountUpdate(account_update)) => {
+                AccountStream::AccountUpdate(account_update)
+            }
             Err(_) => {
                 let stream = AccountStream::Raw(Utf8Bytes::from(text));
                 warn!(?stream, "Raw account stream (unparsed)");
@@ -169,12 +175,11 @@ enum MarketPayload {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "e")]
+#[serde(tag = "e", rename_all = "SCREAMING_SNAKE_CASE")]
 enum AccountPayload {
-    #[serde(rename = "ORDER_TRADE_UPDATE")]
     OrderTradeUpdate(OrderTradeUpdateEvent),
-    #[serde(rename = "TRADE_LITE")]
     TradeLite(TradeLite),
+    AccountUpdate(AccountUpdateEvent),
 }
 
 #[derive(Debug)]

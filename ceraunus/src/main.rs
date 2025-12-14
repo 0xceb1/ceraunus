@@ -19,7 +19,9 @@ use url::Url;
 // Internal crates
 use data::{
     binance::market::Depth,
-    binance::subscription::{AccountStream, MarketStream, StreamCommand, StreamSpec, WsSession},
+    binance::subscription::{
+        AccountStream, MarketStream, StreamCommand, StreamSpec, Timed, WsSession,
+    },
     order::{OrderKind, Side, Symbol, Symbol::SOLUSDT, TimeInForce},
 };
 use trading_core::{
@@ -39,6 +41,16 @@ const STALE_ORDER_THRESHOLD: chrono::Duration = chrono::Duration::seconds(30);
 const TEST_ENDPOINT_WS: &str = "wss://fstream.binancefuture.com/ws";
 #[allow(dead_code)]
 const ENDPOINT_WS: &str = "wss://fstream.binance.com/ws";
+
+#[derive(Debug)]
+enum Event {
+    Account(Timed<AccountStream>),
+    Market(Timed<MarketStream>),
+    SnapshotDone(ClientResult<OrderBook>),
+    SendOrderTick,
+    CancelOrderTick,
+    KeepaliveTick,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -126,25 +138,40 @@ async fn main() -> Result<()> {
     let mut snapshot_fut = snapshot_task(SOLUSDT, http.clone(), 1000, Duration::from_millis(1000));
     let mut depth_counter: u64 = 0;
     let mut keepalive_interval = tokio::time::interval(Duration::from_secs(50 * 60));
-    let mut order_interval = tokio::time::interval(Duration::from_secs(10));
+    let mut send_order_interval = tokio::time::interval(Duration::from_secs(10));
+    let mut cancel_order_interval = tokio::time::interval(Duration::from_secs(60));
 
     // MAIN EVENT LOOP
     loop {
-        tokio::select! {
+        let event = tokio::select! {
             biased;
 
-            // Account stream received
-            Some(timed) = acct_evt_rx.recv() => {
+            Some(timed) = acct_evt_rx.recv() => Event::Account(timed),
+
+            Some(timed) = evt_rx.recv() => Event::Market(timed),
+
+            snapshot_res = &mut snapshot_fut, if !state.has_order_book(&SOLUSDT) => Event::SnapshotDone(snapshot_res),
+
+            _ = send_order_interval.tick(), if state.has_order_book(&SOLUSDT) => Event::SendOrderTick,
+
+            _ = cancel_order_interval.tick() => Event::CancelOrderTick,
+
+            _ = keepalive_interval.tick() => Event::KeepaliveTick,
+        };
+
+        match event {
+            Event::Account(timed) => {
                 let channel_latency = timed.recv_instant.elapsed();
 
                 match timed.event {
                     AccountStream::OrderTradeUpdate(update_event) => {
-                        let network_latency_ms = timed.recv_utc
+                        let network_latency_ms = timed
+                            .recv_utc
                             .signed_duration_since(update_event.event_time())
                             .num_milliseconds();
 
                         let update_start = Instant::now();
-                        let result = state.on_update_received(update_event);
+                        let result = state.on_update_received(update_event.clone());
                         let update_duration = update_start.elapsed();
 
                         tracing::debug!(
@@ -166,25 +193,51 @@ async fn main() -> Result<()> {
                                 "Failed to process order update"
                             );
                         }
-                    },
-                    AccountStream::TradeLite(_) => {},
-                    AccountStream::Raw(_) => {},
-                }
-            },
+                    }
+                    AccountStream::AccountUpdate(update_event) => {
+                        let network_latency_ms = timed
+                            .recv_utc
+                            .signed_duration_since(update_event.event_time())
+                            .num_milliseconds();
 
-            // Market stream received
-            Some(timed) = evt_rx.recv() => {
+                        tracing::debug!(
+                            network_ms = network_latency_ms,
+                            parse_us = timed.parse_duration.as_micros(),
+                            channel_us = channel_latency.as_micros(),
+                            reason = %update_event.reason(),
+                            balances = update_event.balances().len(),
+                            positions = update_event.positions().len(),
+                            "AccountUpdate stream timing"
+                        );
+
+                        info!(
+                            reason = %update_event.reason(),
+                            balances = update_event.balances().len(),
+                            positions = update_event.positions().len(),
+                            "Account update received"
+                        );
+                    }
+                    AccountStream::TradeLite(_) => {}
+                    AccountStream::Raw(_) => {}
+                }
+            }
+
+            Event::Market(timed) => {
                 let channel_latency = timed.recv_instant.elapsed();
 
                 match timed.event {
                     MarketStream::Depth(depth) => {
-                        let network_latency_ms = timed.recv_utc
+                        let network_latency_ms = timed
+                            .recv_utc
                             .signed_duration_since(depth.event_time())
                             .num_milliseconds();
 
                         depth_counter += 1;
+
                         if let Some(ob) = state.get_order_book_mut(&SOLUSDT) {
-                            if (depth.last_final_update_id()..=depth.final_update_id()).contains(&ob.last_update_id()) {
+                            if (depth.last_final_update_id()..=depth.final_update_id())
+                                .contains(&ob.last_update_id())
+                            {
                                 // TODO: recheck the gap-detection logic here
                                 let update_start = Instant::now();
                                 ob.extend(depth);
@@ -214,21 +267,30 @@ async fn main() -> Result<()> {
                                     "Gap detected in depth updates"
                                 );
                                 state.remove_order_book(&SOLUSDT);
-                                snapshot_fut = snapshot_task(SOLUSDT, http.clone(), 1000, Duration::from_millis(1000));
+                                depth_buffer.clear();
+                                snapshot_fut = snapshot_task(
+                                    SOLUSDT,
+                                    http.clone(),
+                                    1000,
+                                    Duration::from_millis(1000),
+                                );
                             }
                         } else {
-                            // Order book not constructed yet
+                            // Order book not constructed yet (or was invalidated); buffer until snapshot is ready
                             depth_buffer.push(depth);
-                            info!(buffer_size=%&depth_buffer.len(), "Depth pushed to buffer");
+                            tracing::debug!(
+                                buffer_size = depth_buffer.len(),
+                                "Depth pushed to buffer"
+                            );
                         }
                     }
-                    // TODO: we still construct the events even if they are immediately dropped
-                    MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::Raw(_) => {},
-                }
-            },
 
-            // SNAPSHOT done
-            snapshot_res = &mut snapshot_fut, if !state.has_order_book(&SOLUSDT) => {
+                    // TODO: we still construct the events even if they are immediately dropped
+                    MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::Raw(_) => {}
+                }
+            }
+
+            Event::SnapshotDone(snapshot_res) => {
                 let mut ob = snapshot_res?;
 
                 for depth in depth_buffer.drain(..) {
@@ -241,10 +303,9 @@ async fn main() -> Result<()> {
                 }
                 info!(last_update_id=%ob.last_update_id(), "Order book ready");
                 state.set_order_book(SOLUSDT, ob);
-            },
+            }
 
-            // cancel stale orders and open new order
-            _ = order_interval.tick(), if state.has_order_book(&SOLUSDT) => {
+            Event::CancelOrderTick => {
                 let stale_ids = state.stale_order_ids(STALE_ORDER_THRESHOLD);
 
                 for stale_id in stale_ids {
@@ -266,7 +327,9 @@ async fn main() -> Result<()> {
                         }
                     });
                 }
+            }
 
+            Event::SendOrderTick => {
                 let order = create_order();
                 let request = order.to_request();
                 state.track_order(order);
@@ -287,10 +350,9 @@ async fn main() -> Result<()> {
                         }
                     }
                 });
-            },
+            }
 
-            // Send keep alive request
-            _ = keepalive_interval.tick() => {
+            Event::KeepaliveTick => {
                 let client = Arc::clone(&client);
                 tokio::spawn(async move {
                     match client.keepalive_listen_key().await {
@@ -299,7 +361,6 @@ async fn main() -> Result<()> {
                     }
                 });
             }
-
         }
     }
 }

@@ -1,8 +1,8 @@
 use crate::order::Symbol;
 use chrono::{DateTime, Utc};
+use derive_getters::Getters;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use derive_getters::Getters;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(from = "(Decimal, Decimal)")]
