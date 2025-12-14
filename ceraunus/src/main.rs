@@ -6,8 +6,6 @@ use std::time::Duration;
 
 // external crates
 use anyhow::Result;
-use chrono::Utc;
-use rust_decimal::{Decimal, dec};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tracing::{error, info, warn};
@@ -20,13 +18,13 @@ use url::Url;
 use data::{
     binance::market::Depth,
     binance::subscription::{AccountStream, MarketStream, StreamCommand, StreamSpec, WsSession},
-    order::{OrderKind, Side, Symbol, Symbol::SOLUSDT, TimeInForce},
+    order::{Symbol, Symbol::SOLUSDT},
 };
 use trading_core::{
     OrderBook, Result as ClientResult,
     engine::State,
     exchange::{Client, TEST_ENDPOINT_REST},
-    models::Order,
+    strategy::{QuoteStrategy, Strategy},
 };
 
 const ACCOUNT_NAME: &str = "test";
@@ -117,11 +115,14 @@ async fn main() -> Result<()> {
     acct_ws.spawn();
 
     cmd_tx
-        .send(StreamCommand::Subscribe(vec![StreamSpec::Depth {
-            symbol: SOLUSDT,
-            levels: None,
-            interval_ms: None,
-        }]))
+        .send(StreamCommand::Subscribe(vec![
+            StreamSpec::Depth {
+                symbol: SOLUSDT,
+                levels: None,
+                interval_ms: None,
+            },
+            StreamSpec::BookTicker { symbol: SOLUSDT },
+        ]))
         .await?;
 
     acct_cmd_tx
@@ -267,26 +268,49 @@ async fn main() -> Result<()> {
             }
 
             Event::SendOrderTick => {
-                let order = create_order();
-                let request = order.to_request();
-                state.register_order(order);
-                let client = Arc::clone(&client);
-                tokio::spawn(async move {
-                    match client.open_order(request).await {
-                        Ok(success) => {
-                            info!(
-                                symbol=%success.symbol(),
-                                price=%success.price(),
-                                client_order_id=%success.client_order_id(),
-                                order_id=%success.order_id(),
-                                "Open order ACK"
-                            );
+                if let Some((bid, ask)) = QuoteStrategy::generate_quotes(SOLUSDT, &state) {
+                    let bid_request = bid.to_request();
+                    let ask_request = ask.to_request();
+                    state.register_order(bid);
+                    state.register_order(ask);
+                    let client = Arc::clone(&client);
+                    tokio::spawn(async move {
+                        let (bid_res, ask_res) = tokio::join!(
+                            client.open_order(bid_request),
+                            client.open_order(ask_request),
+                        );
+
+                        match bid_res {
+                            Ok(success) => {
+                                info!(
+                                    symbol=%success.symbol(),
+                                    price=%success.price(),
+                                    client_order_id=%success.client_order_id(),
+                                    order_id=%success.order_id(),
+                                    "Open bid order ACK"
+                                );
+                            }
+                            Err(err) => {
+                                warn!(%err, "Open bid order failed");
+                            }
                         }
-                        Err(err) => {
-                            warn!(%err, "Open order failed");
-                        }
-                    }
-                });
+
+                        match ask_res {
+                            Ok(success) => {
+                                info!(
+                                    symbol=%success.symbol(),
+                                    price=%success.price(),
+                                    client_order_id=%success.client_order_id(),
+                                    order_id=%success.order_id(),
+                                    "Open ask order ACK"
+                                );
+                            }
+                            Err(err) => {
+                                warn!(%err, "Open ask order failed");
+                            }
+                        };
+                    });
+                }
             }
 
             Event::KeepaliveTick => {
@@ -314,18 +338,4 @@ fn snapshot_task(
         }
         OrderBook::from_snapshot(symbol, depth, TEST_ENDPOINT_REST, http).await
     })
-}
-
-fn create_order() -> Order {
-    let ts = std::cmp::max(Utc::now().timestamp_millis() % 10000, 6969);
-
-    Order::new(
-        SOLUSDT,
-        Side::Buy,
-        OrderKind::Limit,
-        Decimal::new(ts, 2),
-        dec!(1),
-        TimeInForce::GoodUntilCancel,
-        None,
-    )
 }
