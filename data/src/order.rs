@@ -32,6 +32,14 @@ pub enum OrderStatus {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, Display, AsRefStr, EnumString,
 )]
+pub enum Asset {
+    USDT,
+    BUSD,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, Display, AsRefStr, EnumString,
+)]
 pub enum Symbol {
     BTCUSDT,
     ETHUSDT,
