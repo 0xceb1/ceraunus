@@ -4,6 +4,8 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use derive_getters::Getters;
 
+type OrderBookUpdateId = u64;
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(from = "(Decimal, Decimal)")]
 pub struct Level {
@@ -40,13 +42,16 @@ pub struct Depth {
     symbol: Symbol,
 
     #[serde(rename = "U")]
-    first_update_id: u64,
+    #[getter(copy)]
+    first_update_id: OrderBookUpdateId,
 
     #[serde(rename = "u")]
-    final_update_id: u64,
+    #[getter(copy)]
+    final_update_id: OrderBookUpdateId,
 
     #[serde(rename = "pu")]
-    last_final_update_id: u64,
+    #[getter(copy)]
+    last_final_update_id: OrderBookUpdateId,
 
     #[serde(rename = "b")]
     bids: Vec<Level>,
@@ -91,7 +96,7 @@ pub struct AggTrade {
 
 /// Payload model for trade stream
 /// Unfortunately, the trade stream only appears in Binance spot api docs
-#[derive(Debug, Clone, Serialize, Deserialize, Getters)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Getters)]
 pub struct Trade {
     #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
     #[getter(copy)]
@@ -118,4 +123,39 @@ pub struct Trade {
 
     #[serde(rename = "m")]
     is_maker: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Getters)]
+pub struct BookTicker {
+    #[serde(rename = "e")]
+    #[getter(copy)]
+    ob_update_id: OrderBookUpdateId,
+
+    #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
+    #[getter(copy)]
+    event_time: DateTime<Utc>,
+
+    #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]
+    #[getter(copy)]
+    transaction_time: DateTime<Utc>,
+
+    #[serde(rename = "s")]
+    #[getter(copy)]
+    symbol: Symbol,
+
+    #[serde(rename = "b")]
+    #[getter(copy)]
+    bid_price: Decimal,
+
+    #[serde(rename = "B")]
+    #[getter(copy)]
+    bid_qty: Decimal,
+
+    #[serde(rename = "a")]
+    #[getter(copy)]
+    ask_price: Decimal,
+
+    #[serde(rename = "A")]
+    #[getter(copy)]
+    ask_qty: Decimal,
 }

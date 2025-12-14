@@ -58,6 +58,9 @@ pub enum StreamSpec {
         levels: Option<u16>,
         interval_ms: Option<u16>,
     },
+    BookTicker {
+        symbol: Symbol,
+    },
     AggTrade {
         symbol: Symbol,
     },
@@ -83,6 +86,7 @@ impl StreamSpec {
                 (None, Some(i)) => format!("{}@depth@{i}ms", symbol.as_ref().to_lowercase()),
                 (None, None) => format!("{}@depth", symbol.as_ref().to_lowercase()),
             },
+            BookTicker { symbol } => format!("{}@bookTicker", symbol.as_ref().to_lowercase()),
             AggTrade { symbol } => format!("{}@aggTrade", symbol.as_ref().to_lowercase()),
             Trade { symbol } => format!("{}@trade", symbol.as_ref().to_lowercase()),
             TradeLite => "TRADE_LITE".to_string(),
@@ -106,6 +110,7 @@ pub trait ParseStream: Sized {
 #[derive(Debug)]
 pub enum MarketStream {
     Depth(Depth),
+    BookTicker(BookTicker),
     AggTrade(AggTrade),
     Trade(Trade),
     Raw(Utf8Bytes),
@@ -115,6 +120,7 @@ impl ParseStream for MarketStream {
     fn parse(text: &str) -> Self {
         match serde_json::from_str::<MarketPayload>(text) {
             Ok(MarketPayload::Depth(depth)) => MarketStream::Depth(depth),
+            Ok(MarketPayload::BookTicker(book_ticker)) => MarketStream::BookTicker(book_ticker),
             Ok(MarketPayload::AggTrade(agg_trade)) => MarketStream::AggTrade(agg_trade),
             Ok(MarketPayload::Trade(trade)) => MarketStream::Trade(trade),
             Err(_) => {
@@ -156,6 +162,8 @@ impl ParseStream for AccountStream {
 enum MarketPayload {
     #[serde(rename = "depthUpdate")]
     Depth(Depth),
+    #[serde(rename = "bookTicker")]
+    BookTicker(BookTicker),
     #[serde(rename = "trade")]
     Trade(Trade),
     #[serde(rename = "aggTrade")]
