@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
         .with_line_number(true)
         .with_thread_ids(false)
         .compact()
-        .pretty()
+        // .pretty()
         .with_filter(LevelFilter::DEBUG);
 
     // Tokio console layer (enable/configure via env vars; see tokio-console docs)
@@ -131,7 +131,7 @@ async fn main() -> Result<()> {
         .await?;
 
     acct_cmd_tx
-        .send(StreamCommand::Subscribe(vec![StreamSpec::OrderTradeUpdate]))
+        .send(StreamCommand::Subscribe(vec![StreamSpec::OrderTradeUpdate, StreamSpec::TradeLite]))
         .await?;
 
     info!("----------INITILIAZATION FINISHED----------");
@@ -178,7 +178,9 @@ async fn main() -> Result<()> {
                         );
                     }
                 }
-                AccountStream::TradeLite(_) => {}
+                AccountStream::TradeLite(trade_lite) => {
+                    trade_lite.log();
+                }
                 AccountStream::AccountUpdate(update_event) => {
                     info!(
                         reason = %update_event.reason(),
@@ -280,7 +282,6 @@ async fn main() -> Result<()> {
                     state.register_order(ask);
                     let client = Arc::clone(&client);
                     tokio::spawn(async move {
-                        // TODO: very large size
                         let (bid_res, ask_res) = tokio::join!(
                             client.open_order(bid_request),
                             client.open_order(ask_request),

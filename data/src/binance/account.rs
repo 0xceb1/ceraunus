@@ -227,6 +227,22 @@ pub struct TradeLite {
     order_id: u64,
 }
 
+impl TradeLite {
+    pub fn log(&self) {
+        tracing::info!(
+            client_order_id=%self.client_order_id,
+            symbol=%self.symbol,
+            orig_price=%self.orig_price,
+            orig_qty=%self.orig_qty,
+            last_filled_price=%self.last_filled_price,
+            last_filled_qty=%self.last_filled_qty,
+            is_makter=%self.is_makter,
+            side=%self.side,
+            "TradeLite event received"
+        );
+    }
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Display)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[display(rename_all = "SCREAMING_SNAKE_CASE")]
