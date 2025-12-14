@@ -45,7 +45,8 @@ enum Event {
     Account(AccountStream),
     Market(MarketStream),
     SnapshotDone(ClientResult<OrderBook>),
-    OrderTick,
+    SendOrderTick,
+    CancelOrderTick,
     KeepaliveTick,
 }
 
@@ -135,7 +136,8 @@ async fn main() -> Result<()> {
     let mut snapshot_fut = snapshot_task(SOLUSDT, http.clone(), 1000, Duration::from_millis(1000));
     let mut depth_counter: u64 = 0;
     let mut keepalive_interval = tokio::time::interval(Duration::from_secs(50 * 60));
-    let mut order_interval = tokio::time::interval(Duration::from_secs(10));
+    let mut send_order_interval = tokio::time::interval(Duration::from_secs(10));
+    let mut cancel_order_interval = tokio::time::interval(Duration::from_secs(60));
 
     // MAIN EVENT LOOP
     loop {
@@ -148,7 +150,9 @@ async fn main() -> Result<()> {
 
             snapshot_res = &mut snapshot_fut, if !state.has_order_book(&SOLUSDT) => Event::SnapshotDone(snapshot_res),
 
-            _ = order_interval.tick(), if state.has_order_book(&SOLUSDT) => Event::OrderTick,
+            _ = send_order_interval.tick(), if state.has_order_book(&SOLUSDT) => Event::SendOrderTick,
+
+            _ = cancel_order_interval.tick() => Event::CancelOrderTick,
 
             _ = keepalive_interval.tick() => Event::KeepaliveTick,
         };
@@ -235,7 +239,7 @@ async fn main() -> Result<()> {
                 state.set_order_book(SOLUSDT, ob);
             }
 
-            Event::OrderTick => {
+            Event::CancelOrderTick => {
                 let stale_ids = state.stale_order_ids(STALE_ORDER_THRESHOLD);
 
                 for stale_id in stale_ids {
@@ -257,7 +261,9 @@ async fn main() -> Result<()> {
                         }
                     });
                 }
+            }
 
+            Event::SendOrderTick => {
                 let order = create_order();
                 let request = order.to_request();
                 state.track_order(order);
