@@ -238,7 +238,7 @@ mod tests {
         binance::response::OrderSuccessResp,
         order::{OrderKind, OrderStatus, Side, TimeInForce},
     };
-    use rust_decimal::dec;
+    use rust_decimal::{Decimal, dec};
 
     fn make_client() -> Client {
         Client::from_csv(
@@ -256,7 +256,7 @@ mod tests {
         RequestOpen::new(
             Side::Buy,
             dec!(69),
-            dec!(1.0),
+            Decimal::ONE,
             OrderKind::Limit,
             Uuid::new_v4(),
             TimeInForce::GoodUntilDate,
