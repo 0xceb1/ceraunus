@@ -1,0 +1,32 @@
+[logging]
+file_log = true
+console_log = true
+
+[logging.file]
+dir = "./logs"
+name = "test.log"
+rolling = "daily"
+level = "DEBUG"
+json = false
+
+[logging.console]
+level = "DEBUG"
+pretty = true
+
+[account]
+exchange = "binance"                      # binance only
+environment = "testnet"                   # testnet or production
+name = "test"
+csv_path = "./config/test_account_info.csv"
+
+[exchange]
+symbols = ["SOLUSDT"]
+[exchange.rest.endpoints]
+production = "https://fapi.binance.com"
+testnet = "https://demo-fapi.binance.com"
+
+
+[exchange.ws.endpoints]
+# streams API ???
+production = "wss://fstream.binance.com/ws"
+testnet = "wss://fstream.binancefuture.com/ws"

@@ -22,8 +22,6 @@ pub struct Client {
     symbol: Symbol,
     pub api_key: String,
     api_secret: String,
-    #[allow(dead_code)]
-    is_testnet: bool,
     http_client: reqwest::Client,
     endpoint: String,
 }
@@ -37,7 +35,7 @@ fn map_api_error(status: StatusCode, body: String) -> ApiError {
 }
 
 impl Client {
-    pub fn new(
+    pub fn from_csv(
         name: &str,
         csv_path: impl AsRef<Path>,
         symbol: Symbol,
@@ -49,7 +47,6 @@ impl Client {
                 symbol,
                 api_key: confidential.api_key,
                 api_secret: confidential.api_secret,
-                is_testnet: true,
                 http_client,
                 endpoint: String::from(TEST_ENDPOINT_REST),
             },
@@ -57,12 +54,32 @@ impl Client {
                 symbol,
                 api_key: confidential.api_key,
                 api_secret: confidential.api_secret,
-                is_testnet: false,
                 http_client,
                 endpoint: String::from(ENDPOINT_REST),
             },
         };
         Ok(client)
+    }
+
+    pub fn from_config(
+        cfg: &data::config::DataCenterConfig,
+        symbol: Symbol,
+        http_client: reqwest::Client,
+    ) -> Result<Self> {
+        let confidential = AccountConfidential::from_csv(&cfg.account.name, &cfg.account.csv_path)?;
+
+        let endpoint = match cfg.account.environment {
+            data::config::Environment::Production => cfg.exchange.rest.endpoints.production.clone(),
+            data::config::Environment::Testnet => cfg.exchange.rest.endpoints.testnet.clone(),
+        };
+
+        Ok(Self {
+            symbol,
+            api_key: confidential.api_key,
+            api_secret: confidential.api_secret,
+            http_client,
+            endpoint,
+        })
     }
 
     fn now_u64() -> u64 {
@@ -224,7 +241,7 @@ mod tests {
     use rust_decimal::dec;
 
     fn make_client() -> Client {
-        Client::new(
+        Client::from_csv(
             "test",
             "../test/test_account_info.csv",
             "BNBUSDT".parse().unwrap(),

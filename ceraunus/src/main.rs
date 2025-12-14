@@ -24,20 +24,13 @@ use data::{
 use trading_core::{
     OrderBook, Result as ClientResult,
     engine::State,
-    exchange::{Client, TEST_ENDPOINT_REST},
+    exchange::Client,
     strategy::{QuoteStrategy, Strategy},
 };
-
-const ACCOUNT_NAME: &str = "test";
-const ACCOUNT_INFO_PATH: &str = "./test/test_account_info.csv";
-const LOG_PATH: &str = "./logs";
 
 const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const HTTP_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 const STALE_ORDER_THRESHOLD: chrono::Duration = chrono::Duration::seconds(30);
-const TEST_ENDPOINT_WS: &str = "wss://fstream.binancefuture.com/ws";
-#[allow(dead_code)]
-const ENDPOINT_WS: &str = "wss://fstream.binance.com/ws";
 
 #[derive(Debug)]
 enum Event {
@@ -51,10 +44,32 @@ enum Event {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let cfg_path = std::env::var("CERAUNUS_CONFIG").unwrap_or_else(|_| "./config/datacenter-config.toml".to_string());
+    let cfg = data::config::DataCenterConfig::load(&cfg_path)?;
+
+    if cfg.logging.file_log {
+        std::fs::create_dir_all(&cfg.logging.file.dir)?;
+    }
+
     // Configure tracing subscriber
-    let file_appender = tracing_appender::rolling::daily(LOG_PATH, "test.log");
+    let file_appender =
+        tracing_appender::rolling::daily(&cfg.logging.file.dir, &cfg.logging.file.name);
     let (nb_file_writer, _guard1) = tracing_appender::non_blocking(file_appender);
     let (nb_console_writer, _guard2) = tracing_appender::non_blocking(std::io::stdout());
+
+    let file_filter = cfg
+        .logging
+        .file
+        .level
+        .parse::<LevelFilter>()
+        .unwrap_or(LevelFilter::INFO);
+    let console_filter = cfg
+        .logging
+        .console
+        .level
+        .parse::<LevelFilter>()
+        .unwrap_or(LevelFilter::INFO);
+
     let file_layer = fmt::layer()
         .with_writer(nb_file_writer)
         .with_target(false)
@@ -62,7 +77,7 @@ async fn main() -> Result<()> {
         .with_line_number(true)
         .with_thread_ids(false)
         .with_ansi(false)
-        .with_filter(LevelFilter::DEBUG);
+        .with_filter(file_filter);
 
     let stdout_layer = fmt::layer()
         .with_writer(nb_console_writer)
@@ -72,7 +87,7 @@ async fn main() -> Result<()> {
         .with_thread_ids(false)
         .compact()
         // .pretty()
-        .with_filter(LevelFilter::DEBUG);
+        .with_filter(console_filter);
 
     // Tokio console layer (enable/configure via env vars; see tokio-console docs)
     let tokio_console_layer = ConsoleLayer::builder().with_default_env().spawn();
@@ -90,17 +105,22 @@ async fn main() -> Result<()> {
         .pool_idle_timeout(IDLE_TIMEOUT)
         .build()?;
 
-    let client = Arc::new(Client::new(
-        ACCOUNT_NAME,
-        ACCOUNT_INFO_PATH,
-        SOLUSDT,
-        http.clone(),
-    )?);
+    let client = Arc::new(Client::from_config(&cfg, SOLUSDT, http.clone())?);
 
     let listen_key = client.get_listen_key().await?;
 
-    let mkt_url = Url::parse(TEST_ENDPOINT_WS)?;
-    let acct_url = Url::parse(&format!("{}/{}", TEST_ENDPOINT_WS, listen_key))?;
+    let ws_url = match cfg.account.environment {
+        data::config::Environment::Production => &cfg.exchange.ws.endpoints.production,
+        data::config::Environment::Testnet => &cfg.exchange.ws.endpoints.testnet,
+    };
+
+    let rest_url = match cfg.account.environment {
+        data::config::Environment::Production => &cfg.exchange.rest.endpoints.production,
+        data::config::Environment::Testnet => &cfg.exchange.rest.endpoints.testnet,
+    };
+
+    let mkt_url = Url::parse(ws_url)?;
+    let acct_url = Url::parse(&format!("{}/{}", ws_url, listen_key))?;
 
     let ws_config = WebSocketConfig::default()
         .write_buffer_size(0)
@@ -131,7 +151,10 @@ async fn main() -> Result<()> {
         .await?;
 
     acct_cmd_tx
-        .send(StreamCommand::Subscribe(vec![StreamSpec::OrderTradeUpdate, StreamSpec::TradeLite]))
+        .send(StreamCommand::Subscribe(vec![
+            StreamSpec::OrderTradeUpdate,
+            StreamSpec::TradeLite,
+        ]))
         .await?;
 
     info!("----------INITILIAZATION FINISHED----------");
@@ -139,7 +162,13 @@ async fn main() -> Result<()> {
     let mut state: State = State::new();
 
     let mut depth_buffer: Vec<Depth> = Vec::with_capacity(8);
-    let mut snapshot_fut = snapshot_task(SOLUSDT, http.clone(), 1000, Duration::from_millis(1000));
+    let mut snapshot_fut = snapshot_task(
+        SOLUSDT,
+        http.clone(),
+        1000,
+        Duration::from_millis(1000),
+        rest_url.clone(),
+    );
     let mut depth_counter: u64 = 0;
     let mut keepalive_interval = tokio::time::interval(Duration::from_secs(50 * 60));
     let mut send_order_interval = tokio::time::interval(Duration::from_secs(10));
@@ -220,6 +249,7 @@ async fn main() -> Result<()> {
                                 http.clone(),
                                 1000,
                                 Duration::from_millis(1000),
+                                rest_url.clone(),
                             );
                         }
                     } else {
@@ -338,11 +368,12 @@ fn snapshot_task(
     http: reqwest::Client,
     depth: u16,
     delay: Duration,
+    rest_endpoint: String,
 ) -> Pin<Box<dyn Future<Output = ClientResult<OrderBook>> + Send>> {
     Box::pin(async move {
         if !delay.is_zero() {
             tokio::time::sleep(delay).await;
         }
-        OrderBook::from_snapshot(symbol, depth, TEST_ENDPOINT_REST, http).await
+        OrderBook::from_snapshot(symbol, depth, &rest_endpoint, http).await
     })
 }

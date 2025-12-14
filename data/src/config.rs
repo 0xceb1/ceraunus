@@ -1,7 +1,9 @@
 use crate::Result;
 use crate::error::{ConfigError, DataError};
+use crate::order::Symbol;
 use csv::Reader;
 use serde::{Deserialize, Deserializer};
+use std::fs;
 use std::path::Path;
 
 #[allow(dead_code)]
@@ -41,6 +43,82 @@ where
 {
     let s = String::deserialize(deserializer)?;
     Ok(s.eq_ignore_ascii_case("true"))
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LoggingFileConfig {
+    pub dir: String,
+    pub name: String,
+    pub rolling: String,
+    pub level: String,
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LoggingConsoleConfig {
+    pub level: String,
+    pub pretty: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LoggingConfig {
+    pub file_log: bool,
+    pub console_log: bool,
+    pub file: LoggingFileConfig,
+    pub console: LoggingConsoleConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Environment {
+    Production,
+    Testnet,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AccountConfig {
+    pub exchange: String,
+    pub environment: Environment,
+    pub name: String,
+    pub csv_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EndpointMap {
+    pub production: String,
+    pub testnet: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RestConfig {
+    pub endpoints: EndpointMap,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WsConfig {
+    pub endpoints: EndpointMap,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExchangeConfig {
+    pub symbols: Vec<Symbol>,
+    pub rest: RestConfig,
+    pub ws: WsConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DataCenterConfig {
+    pub logging: LoggingConfig,
+    pub account: AccountConfig,
+    pub exchange: ExchangeConfig,
+}
+
+impl DataCenterConfig {
+    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+        let raw = fs::read_to_string(&path).map_err(ConfigError::from)?;
+        let cfg: DataCenterConfig = toml::from_str(&raw).map_err(ConfigError::from)?;
+        Ok(cfg)
+    }
 }
 
 #[cfg(test)]
