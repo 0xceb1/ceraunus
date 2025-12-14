@@ -1,8 +1,8 @@
 use crate::order::Symbol;
 use chrono::{DateTime, Utc};
+use derive_getters::Getters;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use derive_getters::Getters;
 
 type OrderBookUpdateId = u64;
 
@@ -127,9 +127,9 @@ pub struct Trade {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Getters)]
 pub struct BookTicker {
-    #[serde(rename = "e")]
+    #[serde(rename = "u")]
     #[getter(copy)]
-    ob_update_id: OrderBookUpdateId,
+    order_book_update_id: OrderBookUpdateId,
 
     #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
     #[getter(copy)]
