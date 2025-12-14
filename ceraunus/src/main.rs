@@ -142,13 +142,19 @@ async fn main() -> Result<()> {
                             symbol = %update_event.symbol(),
                             order_id = %update_event.order_id(),
                             client_order_id = %update_event.client_order_id(),
-                            exec_type = ?update_event.exec_type(),
-                            order_status = ?update_event.order_status(),
+                            exec_type = %update_event.exec_type(),
+                            order_status = %update_event.order_status(),
                             "Failed to process order update"
                         );
                     }
                 },
                 AccountStream::TradeLite(_) => {},
+                AccountStream::AccountUpdate(update_event) => {
+                    info!(
+                        reason = %update_event.reason(),
+                        "Account update received"
+                    );
+                },
                 AccountStream::Raw(_) => {},
             },
 

@@ -227,8 +227,9 @@ pub struct TradeLite {
     order_id: u64,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Display)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[display(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AccountEventType {
     Deposit,
     Withdraw,
