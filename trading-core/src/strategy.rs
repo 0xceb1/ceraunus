@@ -17,8 +17,8 @@ impl Strategy for QuoteStrategy {
             let ask_opx = mid_price + spread / dec!(2);
             let bid_opx = mid_price - spread / dec!(2);
             Some((
-                Order::new(symbol, Side::Buy, OrderKind::Limit, bid_opx, dec!(0.1), TimeInForce::GoodUntilCancel, None),
-                Order::new(symbol, Side::Sell, OrderKind::Limit, ask_opx, dec!(0.1), TimeInForce::GoodUntilCancel, None),
+                Order::new(symbol, Side::Buy, OrderKind::Limit, bid_opx, dec!(1), TimeInForce::GoodUntilCancel, None),
+                Order::new(symbol, Side::Sell, OrderKind::Limit, ask_opx, dec!(1), TimeInForce::GoodUntilCancel, None),
             ))
         } else {
             None
