@@ -157,7 +157,7 @@ async fn main() -> Result<()> {
                 MarketStream::Depth(depth) => {
                     depth_counter += 1;
                     if let Some(ob) = state.get_order_book_mut(&SOLUSDT) {
-                        if (depth.last_final_update_id..=depth.final_update_id).contains(&ob.last_update_id()) {
+                        if (depth.last_final_update_id()..=depth.final_update_id()).contains(&ob.last_update_id()) {
                             // TODO: recheck the gap-detection logic here
                             ob.extend(depth);
                             if depth_counter.is_multiple_of(100) {
@@ -170,9 +170,9 @@ async fn main() -> Result<()> {
                             }
                         } else {
                             warn!(
-                                last_final_update_id = %depth.last_final_update_id,
-                                first_update_id = %depth.first_update_id,
-                                final_update_id = %depth.final_update_id,
+                                last_final_update_id = %depth.last_final_update_id(),
+                                first_update_id = %depth.first_update_id(),
+                                final_update_id = %depth.final_update_id(),
                                 "Gap detected in depth updates"
                             );
                             state.remove_order_book(&SOLUSDT);
@@ -193,7 +193,7 @@ async fn main() -> Result<()> {
                 let mut ob = snapshot_res?;
 
                 for depth in depth_buffer.drain(..) {
-                    if depth.final_update_id < ob.last_update_id() {
+                    if depth.final_update_id() < ob.last_update_id() {
                         continue; // too old
                     } else {
                         // TODO: we don't check U <= lastUpdateId AND u >= lastUpdateId here

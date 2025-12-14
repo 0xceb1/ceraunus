@@ -197,37 +197,28 @@ pub struct OrderTradeUpdate {
 
 /// Payload model for `TRADE_LITE` stream
 /// https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Trade-Lite
-#[derive(Debug, Clone, Copy, Deserialize, Getters)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[allow(dead_code)]
 pub struct TradeLite {
     #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
-    #[getter(copy)]
     event_time: DateTime<Utc>,
     #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]
-    #[getter(copy)]
     transaction_time: DateTime<Utc>,
     #[serde(rename = "s")]
-    #[getter(copy)]
     symbol: Symbol,
     #[serde(rename = "q")]
-    #[getter(copy)]
     orig_qty: Decimal,
     #[serde(rename = "p")]
-    #[getter(copy)]
     orig_price: Decimal,
     #[serde(rename = "m")]
     is_makter: bool,
     #[serde(rename = "c")]
-    #[getter(copy)]
     client_order_id: Uuid,
     #[serde(rename = "S")]
-    #[getter(copy)]
     side: Side,
     #[serde(rename = "L")]
-    #[getter(copy)]
     last_filled_price: Decimal,
     #[serde(rename = "l")]
-    #[getter(copy)]
     last_filled_qty: Decimal,
 
     #[serde(rename = "t")]
