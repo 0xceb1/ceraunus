@@ -9,7 +9,7 @@ use crate::{
     error::{Result as TradingCoreResult, TradingCoreError},
     models::{Order, OrderBook},
 };
-use data::{binance::{account::OrderTradeUpdateEvent, market::Level}, order::*};
+use data::{binance::{account::OrderTradeUpdateEvent, market::{BookTicker, Level}}, order::*};
 use tracing::debug;
 
 #[allow(dead_code)]
@@ -116,6 +116,12 @@ impl State {
             .take_while(|(_, order)| now.signed_duration_since(*order.start_ts()) >= max_age)
             .map(|(id, _)| *id)
             .collect()
+    }
+
+    pub fn on_book_ticker_received(&mut self, book_ticker: BookTicker) {
+        let bid_level = Level::from((book_ticker.bid_price(), book_ticker.bid_qty()));
+        let ask_level = Level::from((book_ticker.ask_price(), book_ticker.ask_qty()));
+        self.set_bbo_level(book_ticker.symbol(), (bid_level, ask_level));
     }
 
     pub fn on_update_received(

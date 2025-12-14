@@ -220,6 +220,9 @@ async fn main() -> Result<()> {
                         info!(buffer_size=%&depth_buffer.len(), "Depth pushed to buffer");
                     }
                 }
+                MarketStream::BookTicker(book_ticker) => {
+                    state.on_book_ticker_received(book_ticker);
+                }
                 // TODO: we still construct the events even if they are immediately dropped
                 MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::Raw(_) => {}
             },
