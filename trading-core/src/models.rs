@@ -144,12 +144,12 @@ impl OrderBook {
 
     pub fn extend(&mut self, depth: Depth) {
         // WARN: This is a dumb method, please check the last_update_id by yourself
-        self.xchg_ts = depth.transaction_time;
+        self.xchg_ts = depth.transaction_time();
         self.local_ts = Utc::now();
-        self.last_update_id = depth.final_update_id;
+        self.last_update_id = depth.final_update_id();
 
         // TODO: more elegant way?
-        for level in depth.bids {
+        for level in depth.bids() {
             if level.quantity.is_zero() {
                 self.bids.remove(&level.price);
             } else {
@@ -157,7 +157,7 @@ impl OrderBook {
             }
         }
 
-        for level in depth.asks {
+        for level in depth.asks() {
             if level.quantity.is_zero() {
                 self.asks.remove(&level.price);
             } else {

@@ -24,9 +24,9 @@ use data::{
 };
 use trading_core::{
     OrderBook, Result as ClientResult,
-    account::Order,
     engine::State,
     exchange::{Client, TEST_ENDPOINT_REST},
+    models::Order,
 };
 
 const ACCOUNT_NAME: &str = "test";
@@ -179,12 +179,13 @@ async fn main() -> Result<()> {
                 match timed.event {
                     MarketStream::Depth(depth) => {
                         let network_latency_ms = timed.recv_utc
-                            .signed_duration_since(depth.event_time)
+                            .signed_duration_since(depth.event_time())
                             .num_milliseconds();
 
                         depth_counter += 1;
                         if let Some(ob) = state.get_order_book_mut(&SOLUSDT) {
-                            if (depth.last_final_update_id..=depth.final_update_id).contains(&ob.last_update_id()) {
+                            if (depth.last_final_update_id()..=depth.final_update_id()).contains(&ob.last_update_id()) {
+                                // TODO: recheck the gap-detection logic here
                                 let update_start = Instant::now();
                                 ob.extend(depth);
                                 let update_duration = update_start.elapsed();
@@ -207,9 +208,9 @@ async fn main() -> Result<()> {
                                 }
                             } else {
                                 warn!(
-                                    last_final_update_id = %depth.last_final_update_id,
-                                    first_update_id = %depth.first_update_id,
-                                    final_update_id = %depth.final_update_id,
+                                    last_final_update_id = %depth.last_final_update_id(),
+                                    first_update_id = %depth.first_update_id(),
+                                    final_update_id = %depth.final_update_id(),
                                     "Gap detected in depth updates"
                                 );
                                 state.remove_order_book(&SOLUSDT);
@@ -231,7 +232,7 @@ async fn main() -> Result<()> {
                 let mut ob = snapshot_res?;
 
                 for depth in depth_buffer.drain(..) {
-                    if depth.final_update_id < ob.last_update_id() {
+                    if depth.final_update_id() < ob.last_update_id() {
                         continue; // too old
                     } else {
                         // TODO: we don't check U <= lastUpdateId AND u >= lastUpdateId here
