@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::{
-    account::{Order, OrderBook},
+    models::{Order, OrderBook},
     error::{Result as TradingCoreResult, TradingCoreError},
 };
 use data::{binance::account::OrderTradeUpdateEvent, order::*};

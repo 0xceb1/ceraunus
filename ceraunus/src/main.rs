@@ -24,7 +24,7 @@ use data::{
 };
 use trading_core::{
     OrderBook, Result as ClientResult,
-    account::Order,
+    models::Order,
     engine::State,
     exchange::{Client, TEST_ENDPOINT_REST},
 };
