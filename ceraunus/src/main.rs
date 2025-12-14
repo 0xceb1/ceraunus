@@ -6,6 +6,7 @@ use std::time::Duration;
 
 // external crates
 use anyhow::Result;
+use console_subscriber::ConsoleLayer;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tracing::{error, info, warn};
@@ -63,7 +64,7 @@ async fn main() -> Result<()> {
         .with_ansi(false)
         .with_filter(LevelFilter::DEBUG);
 
-    let console_layer = fmt::layer()
+    let stdout_layer = fmt::layer()
         .with_writer(nb_console_writer)
         .with_target(false)
         .with_file(true)
@@ -73,9 +74,13 @@ async fn main() -> Result<()> {
         .pretty()
         .with_filter(LevelFilter::DEBUG);
 
+    // Tokio console layer (enable/configure via env vars; see tokio-console docs)
+    let tokio_console_layer = ConsoleLayer::builder().with_default_env().spawn();
+
     Registry::default()
-        .with(console_layer)
+        .with(stdout_layer)
         .with(file_layer)
+        .with(tokio_console_layer)
         .init();
 
     // build shared http client

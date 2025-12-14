@@ -7,7 +7,8 @@ edition = "2024"
 trading-core = { path = "../trading-core" }
 data = { path = "../data" }
 
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["full", "tracing"] }
+console-subscriber = { version = "0.5" }
 tokio-tungstenite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
