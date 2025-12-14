@@ -24,9 +24,9 @@ use data::{
 };
 use trading_core::{
     OrderBook, Result as ClientResult,
-    models::Order,
     engine::State,
     exchange::{Client, TEST_ENDPOINT_REST},
+    models::Order,
 };
 
 const ACCOUNT_NAME: &str = "test";
@@ -39,6 +39,15 @@ const STALE_ORDER_THRESHOLD: chrono::Duration = chrono::Duration::seconds(30);
 const TEST_ENDPOINT_WS: &str = "wss://fstream.binancefuture.com/ws";
 #[allow(dead_code)]
 const ENDPOINT_WS: &str = "wss://fstream.binance.com/ws";
+
+#[derive(Debug)]
+enum Event {
+    Account(AccountStream),
+    Market(MarketStream),
+    SnapshotDone(ClientResult<OrderBook>),
+    OrderTick,
+    KeepaliveTick,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -130,11 +139,22 @@ async fn main() -> Result<()> {
 
     // MAIN EVENT LOOP
     loop {
-        tokio::select! {
+        let event = tokio::select! {
             biased;
 
-            // Account stream received
-            Some(acct_event) = acct_evt_rx.recv() => match acct_event {
+            Some(acct_event) = acct_evt_rx.recv() => Event::Account(acct_event),
+
+            Some(event) = evt_rx.recv() => Event::Market(event),
+
+            snapshot_res = &mut snapshot_fut, if !state.has_order_book(&SOLUSDT) => Event::SnapshotDone(snapshot_res),
+
+            _ = order_interval.tick(), if state.has_order_book(&SOLUSDT) => Event::OrderTick,
+
+            _ = keepalive_interval.tick() => Event::KeepaliveTick,
+        };
+
+        match event {
+            Event::Account(acct_event) => match acct_event {
                 AccountStream::OrderTradeUpdate(update_event) => {
                     if let Err(err) = state.on_update_received(update_event.clone()) {
                         error!(
@@ -147,23 +167,24 @@ async fn main() -> Result<()> {
                             "Failed to process order update"
                         );
                     }
-                },
-                AccountStream::TradeLite(_) => {},
+                }
+                AccountStream::TradeLite(_) => {}
                 AccountStream::AccountUpdate(update_event) => {
                     info!(
                         reason = %update_event.reason(),
                         "Account update received"
                     );
-                },
-                AccountStream::Raw(_) => {},
+                }
+                AccountStream::Raw(_) => {}
             },
 
-            // Market stream received
-            Some(event) = evt_rx.recv() => match event {
+            Event::Market(event) => match event {
                 MarketStream::Depth(depth) => {
                     depth_counter += 1;
                     if let Some(ob) = state.get_order_book_mut(&SOLUSDT) {
-                        if (depth.last_final_update_id()..=depth.final_update_id()).contains(&ob.last_update_id()) {
+                        if (depth.last_final_update_id()..=depth.final_update_id())
+                            .contains(&ob.last_update_id())
+                        {
                             // TODO: recheck the gap-detection logic here
                             ob.extend(depth);
                             if depth_counter.is_multiple_of(100) {
@@ -182,7 +203,12 @@ async fn main() -> Result<()> {
                                 "Gap detected in depth updates"
                             );
                             state.remove_order_book(&SOLUSDT);
-                            snapshot_fut = snapshot_task(SOLUSDT, http.clone(), 1000, Duration::from_millis(1000));
+                            snapshot_fut = snapshot_task(
+                                SOLUSDT,
+                                http.clone(),
+                                1000,
+                                Duration::from_millis(1000),
+                            );
                         }
                     } else {
                         // Order book not constructed yet
@@ -191,11 +217,10 @@ async fn main() -> Result<()> {
                     }
                 }
                 // TODO: we still construct the events even if they are immediately dropped
-                MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::Raw(_) => {},
+                MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::Raw(_) => {}
             },
 
-            // SNAPSHOT done
-            snapshot_res = &mut snapshot_fut, if !state.has_order_book(&SOLUSDT) => {
+            Event::SnapshotDone(snapshot_res) => {
                 let mut ob = snapshot_res?;
 
                 for depth in depth_buffer.drain(..) {
@@ -208,10 +233,9 @@ async fn main() -> Result<()> {
                 }
                 info!(last_update_id=%ob.last_update_id(), "Order book ready");
                 state.set_order_book(SOLUSDT, ob);
-            },
+            }
 
-            // cancel stale orders and open new order
-            _ = order_interval.tick(), if state.has_order_book(&SOLUSDT) => {
+            Event::OrderTick => {
                 let stale_ids = state.stale_order_ids(STALE_ORDER_THRESHOLD);
 
                 for stale_id in stale_ids {
@@ -254,10 +278,9 @@ async fn main() -> Result<()> {
                         }
                     }
                 });
-            },
+            }
 
-            // Send keep alive request
-            _ = keepalive_interval.tick() => {
+            Event::KeepaliveTick => {
                 let client = Arc::clone(&client);
                 tokio::spawn(async move {
                     match client.keepalive_listen_key().await {
@@ -266,7 +289,6 @@ async fn main() -> Result<()> {
                     }
                 });
             }
-
         }
     }
 }
