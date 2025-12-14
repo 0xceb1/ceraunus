@@ -116,8 +116,8 @@ async fn main() -> Result<()> {
     let ws = WsSession::market(mkt_url, ws_config, cmd_rx, evt_tx);
     let acct_ws = WsSession::account(acct_url, ws_config, acct_cmd_rx, acct_evt_tx);
 
-    ws.spawn();
-    acct_ws.spawn();
+    ws.spawn_named("ws.market.session");
+    acct_ws.spawn_named("ws.account.session");
 
     cmd_tx
         .send(StreamCommand::Subscribe(vec![
@@ -150,15 +150,15 @@ async fn main() -> Result<()> {
         let event = tokio::select! {
             biased;
 
-            Some(acct_event) = acct_evt_rx.recv() => Event::Account(acct_event),
-
             Some(event) = evt_rx.recv() => Event::Market(event),
 
-            snapshot_res = &mut snapshot_fut, if !state.has_order_book(&SOLUSDT) => Event::SnapshotDone(snapshot_res),
+            Some(acct_event) = acct_evt_rx.recv() => Event::Account(acct_event),
 
             _ = send_order_interval.tick(), if state.has_order_book(&SOLUSDT) => Event::SendOrderTick,
 
             _ = cancel_order_interval.tick() => Event::CancelOrderTick,
+
+            snapshot_res = &mut snapshot_fut, if !state.has_order_book(&SOLUSDT) => Event::SnapshotDone(snapshot_res),
 
             _ = keepalive_interval.tick() => Event::KeepaliveTick,
         };
@@ -280,6 +280,7 @@ async fn main() -> Result<()> {
                     state.register_order(ask);
                     let client = Arc::clone(&client);
                     tokio::spawn(async move {
+                        // TODO: very large size
                         let (bid_res, ask_res) = tokio::join!(
                             client.open_order(bid_request),
                             client.open_order(ask_request),

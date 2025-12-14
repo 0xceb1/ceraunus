@@ -1,6 +1,6 @@
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fmt};
+use std::{collections::HashSet, fmt, future::Future};
 use strum_macros::{AsRefStr, Display, EnumString};
 use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_tungstenite::{
@@ -143,9 +143,7 @@ pub enum AccountStream {
 impl ParseStream for AccountStream {
     fn parse(text: &str) -> Self {
         match serde_json::from_str::<AccountPayload>(text) {
-            Ok(AccountPayload::OrderTradeUpdate(order_trade_update)) => {
-                AccountStream::OrderTradeUpdate(order_trade_update)
-            }
+            Ok(AccountPayload::OrderTradeUpdate(update)) => AccountStream::OrderTradeUpdate(update),
             Ok(AccountPayload::TradeLite(trade_lite)) => AccountStream::TradeLite(trade_lite),
             Ok(AccountPayload::AccountUpdate(account_update)) => AccountStream::AccountUpdate(account_update),
             Err(_) => {
@@ -232,8 +230,8 @@ impl<E> WsSession<E>
 where
     E: ParseStream + 'static + Send + Sync + fmt::Debug,
 {
-    pub fn spawn(self) -> JoinHandle<()> {
-        tokio::spawn(async move {
+    fn task(self) -> impl Future<Output = ()> + Send + 'static {
+        async move {
             let mut session = self;
             let Ok((ws_stream, _)) =
                 connect_async_with_config(session.endpoint.as_str(), Some(session.config), true)
@@ -297,6 +295,17 @@ where
                     }
                 }
             }
-        })
+        }
+    }
+
+    pub fn spawn(self) -> JoinHandle<()> {
+        tokio::spawn(self.task())
+    }
+
+    pub fn spawn_named(self, name: &'static str) -> JoinHandle<()> {
+        tokio::task::Builder::new()
+            .name(name)
+            .spawn(self.task())
+            .expect(format!("Failed to spawn task {}", name).as_str())
     }
 }
