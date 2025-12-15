@@ -11,7 +11,7 @@ pub struct QuoteStrategy;
 
 impl Strategy for QuoteStrategy {
     fn generate_quotes(symbol: Symbol, state: &State) -> Option<(Order, Order)> {
-        if let  Some((bid, ask)) = state.get_bbo_level(&symbol) {
+        if let  Some((bid, ask)) = state.bbo_levels[symbol] {
             let spread = ask.price - bid.price;
             let mid_price = (ask.price + bid.price ) / Decimal::TWO;
             let ask_opx = mid_price + spread / Decimal::TWO;

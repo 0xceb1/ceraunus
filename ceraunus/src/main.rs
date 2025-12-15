@@ -183,11 +183,11 @@ async fn main() -> Result<()> {
 
             Some(acct_event) = acct_evt_rx.recv() => Event::Account(acct_event),
 
-            _ = send_order_interval.tick(), if state.has_order_book(&SOLUSDT) => Event::SendOrderTick,
+            _ = send_order_interval.tick(), if state.has_order_book(SOLUSDT) => Event::SendOrderTick,
 
             _ = cancel_order_interval.tick() => Event::CancelOrderTick,
 
-            snapshot_res = &mut snapshot_fut, if !state.has_order_book(&SOLUSDT) => Event::SnapshotDone(snapshot_res),
+            snapshot_res = &mut snapshot_fut, if !state.has_order_book(SOLUSDT) => Event::SnapshotDone(snapshot_res),
 
             _ = keepalive_interval.tick() => Event::KeepaliveTick,
         };
@@ -222,7 +222,7 @@ async fn main() -> Result<()> {
             Event::Market(event) => match event {
                 MarketStream::Depth(depth) => {
                     depth_counter += 1;
-                    if let Some(ob) = state.get_order_book_mut(&SOLUSDT) {
+                    if let Some(ob) = &mut state.order_books[SOLUSDT] {
                         if (depth.last_final_update_id()..=depth.final_update_id())
                             .contains(&ob.last_update_id())
                         {
@@ -243,7 +243,7 @@ async fn main() -> Result<()> {
                                 final_update_id = %depth.final_update_id(),
                                 "Gap detected in depth updates"
                             );
-                            state.remove_order_book(&SOLUSDT);
+                            state.remove_order_book(SOLUSDT);
                             snapshot_fut = snapshot_task(
                                 SOLUSDT,
                                 http.clone(),
@@ -277,7 +277,7 @@ async fn main() -> Result<()> {
                     }
                 }
                 info!(last_update_id=%ob.last_update_id(), "Order book ready");
-                state.set_order_book(SOLUSDT, ob);
+                state.order_books[SOLUSDT] = Some(ob);
             }
 
             Event::CancelOrderTick => {

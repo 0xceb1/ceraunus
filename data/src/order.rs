@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use strum_macros::{AsRefStr, Display, EnumString};
+use enum_map::Enum;
 use uuid::Uuid;
 
 pub type ClientId = Uuid;
@@ -38,7 +39,7 @@ pub enum Asset {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, Display, AsRefStr, EnumString,
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, Display, AsRefStr, Enum, EnumString
 )]
 pub enum Symbol {
     BTCUSDT,

@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use enum_map::EnumMap;
 use chrono::{Duration, Utc};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
@@ -24,10 +23,10 @@ type BboPair = (Level, Level);
 #[derive(Debug)]
 pub struct State {
     // best-available ask & bid
-    bbo_levels: HashMap<Symbol, BboPair>, // (bid_level, ask_level)
+    pub bbo_levels: EnumMap<Symbol, Option<BboPair>>, // (bid_level, ask_level)
 
     // local order book
-    order_books: HashMap<Symbol, OrderBook>,
+    pub order_books: EnumMap<Symbol, Option<OrderBook>>,
 
     // orders that may still receive updates
     active_orders: IndexMap<Uuid, Order>,
@@ -44,45 +43,21 @@ pub struct State {
 impl State {
     pub fn new() -> Self {
         Self {
-            bbo_levels: HashMap::with_capacity(1),
-            order_books: HashMap::with_capacity(1),
-            active_orders: IndexMap::with_capacity(64),
+            bbo_levels: EnumMap::from_fn(|_| None),
+            order_books: EnumMap::from_fn(|_| None),
+            active_orders: IndexMap::with_capacity(128),
             hist_orders: Vec::with_capacity(256),
             open_position: (Decimal::new(0, 0), Decimal::new(0, 0)),
         }
     }
 
     // Order book management
-    pub fn get_bbo_level(&self, symbol: &Symbol) -> Option<BboPair> {
-        self.bbo_levels.get(symbol).copied()
+    pub fn remove_order_book(&mut self, symbol: Symbol) {
+        self.order_books[symbol] = None;
     }
 
-    pub fn get_bbo_level_mut(&mut self, symbol: &Symbol) -> Option<&mut BboPair> {
-        self.bbo_levels.get_mut(symbol)
-    }
-
-    pub fn set_bbo_level(&mut self, symbol: Symbol, new_level: BboPair) -> Option<BboPair> {
-        self.bbo_levels.insert(symbol, new_level)
-    }
-
-    pub fn get_order_book(&self, symbol: &Symbol) -> Option<&OrderBook> {
-        self.order_books.get(symbol)
-    }
-
-    pub fn get_order_book_mut(&mut self, symbol: &Symbol) -> Option<&mut OrderBook> {
-        self.order_books.get_mut(symbol)
-    }
-
-    pub fn set_order_book(&mut self, symbol: Symbol, ob: OrderBook) {
-        self.order_books.insert(symbol, ob);
-    }
-
-    pub fn remove_order_book(&mut self, symbol: &Symbol) -> Option<OrderBook> {
-        self.order_books.remove(symbol)
-    }
-
-    pub fn has_order_book(&self, symbol: &Symbol) -> bool {
-        self.order_books.contains_key(symbol)
+    pub fn has_order_book(&self, symbol: Symbol) -> bool {
+        self.order_books[symbol].is_some()
     }
 
     // Active order tracking
@@ -121,7 +96,7 @@ impl State {
     pub fn on_book_ticker_received(&mut self, book_ticker: BookTicker) {
         let bid_level = Level::from((book_ticker.bid_price(), book_ticker.bid_qty()));
         let ask_level = Level::from((book_ticker.ask_price(), book_ticker.ask_qty()));
-        self.set_bbo_level(book_ticker.symbol(), (bid_level, ask_level));
+        self.bbo_levels[book_ticker.symbol()] = Some((bid_level, ask_level));
     }
 
     pub fn on_update_received(
