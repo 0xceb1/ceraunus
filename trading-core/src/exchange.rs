@@ -148,7 +148,8 @@ impl Client {
         let mut query_string = format!("timestamp={}", Self::now_u64());
         if let Some(symbol) = symbol {
             query_string.push_str(&format!("&symbol={}", symbol));
-        } else {}
+        } else {
+        }
         let signed_request = self.sign("")?;
         let response = self
             .signed_put("/fapi/v1/openOrders", signed_request)
@@ -230,7 +231,7 @@ mod tests {
     use data::{
         binance::response::OrderSuccessResp,
         config::DataCenterConfig,
-        order::{OrderKind, OrderStatus, Side, TimeInForce},
+        order::{OrderKind, OrderStatus, Side, Symbol, TimeInForce},
     };
     use rust_decimal::{Decimal, dec};
 
@@ -238,7 +239,7 @@ mod tests {
         let cfg_path = std::env::var("CERAUNUS_CONFIG")
             .unwrap_or_else(|_| "../config/datacenter-config.toml".to_string());
         let cfg = DataCenterConfig::load(&cfg_path).expect("Failed to load config");
-        Client::from_config(&cfg, "BNBUSDT".parse().unwrap(), reqwest::Client::new())
+        Client::from_config(&cfg, Symbol::BNBUSDT, reqwest::Client::new())
             .expect("Failed to create client")
     }
 

@@ -1,5 +1,5 @@
-use enum_map::EnumMap;
 use chrono::{Duration, Utc};
+use enum_map::EnumMap;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use uuid::Uuid;
@@ -8,7 +8,13 @@ use crate::{
     error::{Result as TradingCoreResult, TradingCoreError},
     models::{Order, OrderBook},
 };
-use data::{binance::{account::OrderTradeUpdateEvent, market::{BookTicker, Level}}, order::*};
+use data::{
+    binance::{
+        account::OrderTradeUpdateEvent,
+        market::{BookTicker, Level},
+    },
+    order::*,
+};
 use tracing::debug;
 
 #[allow(dead_code)]

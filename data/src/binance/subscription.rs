@@ -1,7 +1,7 @@
+use derive_more::Display;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt, future::Future};
-use derive_more::Display;
 use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_tungstenite::{
     connect_async_with_config,
@@ -55,9 +55,15 @@ pub enum StreamSpec {
         levels: Option<u16>,
         interval_ms: Option<u16>,
     },
-    BookTicker { symbol: Symbol, },
-    AggTrade { symbol: Symbol, },
-    Trade { symbol: Symbol },
+    BookTicker {
+        symbol: Symbol,
+    },
+    AggTrade {
+        symbol: Symbol,
+    },
+    Trade {
+        symbol: Symbol,
+    },
 
     // account streams
     OrderTradeUpdate,
@@ -74,14 +80,14 @@ impl StreamSpec {
                 levels,
                 interval_ms,
             } => match (levels, interval_ms) {
-                (Some(l), Some(i)) => format!("{}@depth{l}@{i}ms", symbol.as_ref().to_lowercase()),
-                (Some(l), None) => format!("{}@depth{l}", symbol.as_ref().to_lowercase()),
-                (None, Some(i)) => format!("{}@depth@{i}ms", symbol.as_ref().to_lowercase()),
-                (None, None) => format!("{}@depth", symbol.as_ref().to_lowercase()),
+                (Some(l), Some(i)) => format!("{}@depth{l}@{i}ms", symbol.as_str_lowercase()),
+                (Some(l), None) => format!("{}@depth{l}", symbol.as_str_lowercase()),
+                (None, Some(i)) => format!("{}@depth@{i}ms", symbol.as_str_lowercase()),
+                (None, None) => format!("{}@depth", symbol.as_str_lowercase()),
             },
-            S::BookTicker { symbol } => format!("{}@bookTicker", symbol.as_ref().to_lowercase()),
-            S::AggTrade { symbol } => format!("{}@aggTrade", symbol.as_ref().to_lowercase()),
-            S::Trade { symbol } => format!("{}@trade", symbol.as_ref().to_lowercase()),
+            S::BookTicker { symbol } => format!("{}@bookTicker", symbol.as_str_lowercase()),
+            S::AggTrade { symbol } => format!("{}@aggTrade", symbol.as_str_lowercase()),
+            S::Trade { symbol } => format!("{}@trade", symbol.as_str_lowercase()),
             S::TradeLite => "TRADE_LITE".to_string(),
             S::OrderTradeUpdate => "ORDER_TRADE_UPDATE".to_string(),
             S::AccountUpdate => "ACCOUNT_UPDATE".to_string(),
@@ -138,7 +144,9 @@ impl ParseStream for AccountStream {
         match serde_json::from_str::<AccountPayload>(text) {
             Ok(AccountPayload::OrderTradeUpdate(update)) => AccountStream::OrderTradeUpdate(update),
             Ok(AccountPayload::TradeLite(trade_lite)) => AccountStream::TradeLite(trade_lite),
-            Ok(AccountPayload::AccountUpdate(account_update)) => AccountStream::AccountUpdate(account_update),
+            Ok(AccountPayload::AccountUpdate(account_update)) => {
+                AccountStream::AccountUpdate(account_update)
+            }
             Err(_) => {
                 let stream = AccountStream::Raw(Utf8Bytes::from(text));
                 warn!(?stream, "Raw account stream (unparsed)");

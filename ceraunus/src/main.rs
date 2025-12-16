@@ -44,7 +44,8 @@ enum Event {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cfg_path = std::env::var("CERAUNUS_CONFIG").unwrap_or_else(|_| "./config/datacenter-config.toml".to_string());
+    let cfg_path = std::env::var("CERAUNUS_CONFIG")
+        .unwrap_or_else(|_| "./config/datacenter-config.toml".to_string());
     let cfg = data::config::DataCenterConfig::load(&cfg_path)?;
 
     if cfg.logging.file_log {

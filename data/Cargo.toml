@@ -20,8 +20,6 @@ csv = "1.4.0"
 
 derive_more = { workspace = true }
 derive-getters = { workspace = true, features = ["auto_copy_getters"] }
-strum = { workspace = true }
-strum_macros = { workspace = true }
 enum-map = { workspace = true }
 
 openssl = { workspace = true }
