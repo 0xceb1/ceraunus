@@ -2,8 +2,7 @@ use crate::error::{ApiError, MessageCodecError, Result, TradingCoreError};
 use chrono::Utc;
 use data::{
     DataError,
-    binance::request::RequestOpen,
-    binance::response::OrderSuccessResp,
+    binance::{request::RequestOpen, response::OrderSuccessResp},
     config::AccountConfidential,
     order::{Symbol, TimeInForce},
 };
@@ -145,6 +144,29 @@ impl Client {
         Ok(listen_key)
     }
 
+    pub async fn get_open_orders(&self, symbol: Option<Symbol>) -> Result<Box<[OrderSuccessResp]>> {
+        let mut query_string = format!("timestamp={}", Self::now_u64());
+        if let Some(symbol) = symbol {
+            query_string.push_str(&format!("&symbol={}", symbol));
+        } else {}
+        let signed_request = self.sign("")?;
+        let response = self
+            .signed_put("/fapi/v1/openOrders", signed_request)
+            .await?;
+
+        let status = response.status();
+        let body = response.text().await?;
+
+        if !status.is_success() {
+            let api_err = map_api_error(status, body);
+            return Err(TradingCoreError::from(api_err));
+        }
+
+        let orders: Box<[OrderSuccessResp]> = serde_json::from_str(&body)?;
+
+        Ok(orders)
+    }
+
     pub async fn open_order(&self, request: RequestOpen) -> Result<OrderSuccessResp> {
         match (request.time_in_force(), request.good_till_date()) {
             (TimeInForce::GoodUntilDate, Some(_)) => {}
@@ -190,6 +212,7 @@ impl Client {
         let response = self.signed_delete("/fapi/v1/order", signed_request).await?;
         let status = response.status();
         let body = response.text().await?;
+
         if !status.is_success() {
             let api_err = map_api_error(status, body);
             return Err(TradingCoreError::from(api_err));
