@@ -142,13 +142,27 @@ impl OrderBook {
         })
     }
 
+    pub fn show(&self, depth: usize) -> String {
+        //TODO: benchmark the perf
+        format!(
+            "[B:{}|A:{}]",
+            self.bids.iter().rev().take(depth)
+                .map(|(p, q)| format!("{}@{}", q, p))
+                .collect::<Vec<_>>()
+                .join(","),
+            self.asks.iter().take(depth)
+                .map(|(p, q)| format!("{}@{}", q, p))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    }
+
     pub fn extend(&mut self, depth: Depth) {
         // WARN: This is a dumb method, please check the last_update_id by yourself
         self.xchg_ts = depth.transaction_time();
         self.local_ts = Utc::now();
         self.last_update_id = depth.final_update_id();
 
-        // TODO: more elegant way?
         for level in depth.bids() {
             if level.quantity.is_zero() {
                 self.bids.remove(&level.price);

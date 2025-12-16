@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 // external crates
+use chrono::Utc;
 use anyhow::Result;
 use console_subscriber::ConsoleLayer;
 use tokio::sync::mpsc;
@@ -39,6 +40,7 @@ enum Event {
     SnapshotDone(ClientResult<OrderBook>),
     SendOrderTick,
     CancelOrderTick,
+    ReportStateTick,
     KeepaliveTick,
 }
 
@@ -170,10 +172,10 @@ async fn main() -> Result<()> {
         Duration::from_millis(1000),
         rest_url.clone(),
     );
-    let mut depth_counter: u64 = 0;
     let mut keepalive_interval = tokio::time::interval(Duration::from_secs(50 * 60));
     let mut send_order_interval = tokio::time::interval(Duration::from_secs(10));
     let mut cancel_order_interval = tokio::time::interval(Duration::from_secs(60));
+    let mut report_state_interval = tokio::time::interval(Duration::from_secs(60));
 
     // MAIN EVENT LOOP
     loop {
@@ -183,6 +185,8 @@ async fn main() -> Result<()> {
             Some(event) = evt_rx.recv() => Event::Market(event),
 
             Some(acct_event) = acct_evt_rx.recv() => Event::Account(acct_event),
+
+            _ = report_state_interval.tick() => Event::ReportStateTick,
 
             _ = send_order_interval.tick(), if state.has_order_book(SOLUSDT) => Event::SendOrderTick,
 
@@ -222,21 +226,12 @@ async fn main() -> Result<()> {
 
             Event::Market(event) => match event {
                 MarketStream::Depth(depth) => {
-                    depth_counter += 1;
                     if let Some(ob) = &mut state.order_books[SOLUSDT] {
                         if (depth.last_final_update_id()..=depth.final_update_id())
                             .contains(&ob.last_update_id())
                         {
                             // TODO: recheck the gap-detection logic here
                             ob.extend(depth);
-                            if depth_counter.is_multiple_of(100) {
-                                info!(
-                                    last_update_id = %ob.last_update_id(),
-                                    bids = %ob.bids().len(),
-                                    asks = %ob.asks().len(),
-                                    "Order book depth checkpoint"
-                                );
-                            }
                         } else {
                             warn!(
                                 last_final_update_id = %depth.last_final_update_id(),
@@ -349,6 +344,16 @@ async fn main() -> Result<()> {
                         };
                     });
                 }
+            }
+
+            Event::ReportStateTick => {
+                info!(
+                    elapsed = %(Utc::now() - state.start_time()),
+                    turnover = %state.turnover(),
+                    curr_pos = %state.get_position(SOLUSDT),
+                    ob = ?state.order_books[SOLUSDT].as_ref().map(|ob| ob.show(5)),
+                    "Trading Summary"
+                );
             }
 
             Event::KeepaliveTick => {

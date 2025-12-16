@@ -64,6 +64,18 @@ impl State {
         }
     }
 
+    pub fn start_time(&self) -> DateTime<Utc> {
+        self.start_time
+    }
+
+    pub fn turnover(&self) -> Decimal {
+        self.turnover
+    }
+
+    pub fn get_position(&self, symbol: Symbol) -> Decimal {
+        self.position[symbol]
+    }
+
     // Order book management
     pub fn remove_order_book(&mut self, symbol: Symbol) {
         self.order_books[symbol] = None;
