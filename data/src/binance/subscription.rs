@@ -1,7 +1,7 @@
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt, future::Future};
-use strum_macros::{AsRefStr, Display, EnumString};
+use derive_more::Display;
 use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_tungstenite::{
     connect_async_with_config,
@@ -17,10 +17,10 @@ use crate::binance::account::{AccountUpdateEvent, OrderTradeUpdateEvent, TradeLi
 use crate::binance::market::*;
 use crate::order::Symbol;
 
-#[derive(Debug, Serialize, Clone, Display, AsRefStr, EnumString)]
+#[derive(Debug, Serialize, Clone, Display)]
 #[serde(rename_all = "UPPERCASE")]
-#[strum(serialize_all = "UPPERCASE")]
-enum WsSubscriptionMethod {
+#[display(rename_all = "UPPERCASE")]
+pub(crate) enum WsSubscriptionMethod {
     Subscribe,
     Unsubscribe,
 }
@@ -41,32 +41,25 @@ impl fmt::Display for WsSubscriptionCommand {
 }
 
 impl WsSubscriptionCommand {
-    pub fn new(method: &str, params: Vec<String>, id: u64) -> Self {
-        Self {
-            method: method.parse().expect("Check your spell!"),
-            params,
-            id,
-        }
+    pub(crate) fn new(method: WsSubscriptionMethod, params: Vec<String>, id: u64) -> Self {
+        Self { method, params, id }
     }
 }
 
 /// Available streams
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum StreamSpec {
+    // market streams
     Depth {
         symbol: Symbol,
         levels: Option<u16>,
         interval_ms: Option<u16>,
     },
-    BookTicker {
-        symbol: Symbol,
-    },
-    AggTrade {
-        symbol: Symbol,
-    },
-    Trade {
-        symbol: Symbol,
-    },
+    BookTicker { symbol: Symbol, },
+    AggTrade { symbol: Symbol, },
+    Trade { symbol: Symbol },
+
+    // account streams
     OrderTradeUpdate,
     TradeLite,
     AccountUpdate,
@@ -74,9 +67,9 @@ pub enum StreamSpec {
 
 impl StreamSpec {
     fn as_param(&self) -> String {
-        use StreamSpec::*;
+        use StreamSpec as S;
         match self {
-            Depth {
+            S::Depth {
                 symbol,
                 levels,
                 interval_ms,
@@ -86,12 +79,12 @@ impl StreamSpec {
                 (None, Some(i)) => format!("{}@depth@{i}ms", symbol.as_ref().to_lowercase()),
                 (None, None) => format!("{}@depth", symbol.as_ref().to_lowercase()),
             },
-            BookTicker { symbol } => format!("{}@bookTicker", symbol.as_ref().to_lowercase()),
-            AggTrade { symbol } => format!("{}@aggTrade", symbol.as_ref().to_lowercase()),
-            Trade { symbol } => format!("{}@trade", symbol.as_ref().to_lowercase()),
-            TradeLite => "TRADE_LITE".to_string(),
-            OrderTradeUpdate => "ORDER_TRADE_UPDATE".to_string(),
-            AccountUpdate => "ACCOUNT_UPDATE".to_string(),
+            S::BookTicker { symbol } => format!("{}@bookTicker", symbol.as_ref().to_lowercase()),
+            S::AggTrade { symbol } => format!("{}@aggTrade", symbol.as_ref().to_lowercase()),
+            S::Trade { symbol } => format!("{}@trade", symbol.as_ref().to_lowercase()),
+            S::TradeLite => "TRADE_LITE".to_string(),
+            S::OrderTradeUpdate => "ORDER_TRADE_UPDATE".to_string(),
+            S::AccountUpdate => "ACCOUNT_UPDATE".to_string(),
         }
     }
 }
@@ -272,11 +265,12 @@ where
                     }
                     // if a command sent
                     maybe_cmd = session.cmd_rx.recv() => {
+                        use WsSubscriptionMethod as M;
                         match maybe_cmd {
                             Some(StreamCommand::Subscribe(specs)) => {
                                 let params: Vec<String> = specs.iter().map(StreamSpec::as_param).collect();
                                 session.active.extend(specs);
-                                let cmd = WsSubscriptionCommand::new("SUBSCRIBE", params, session.next_id);
+                                let cmd = WsSubscriptionCommand::new(M::Subscribe, params, session.next_id);
                                 session.next_id += 1;
                                 let _ = ws_sink.send(Message::Text(cmd.to_string().into())).await;
                             }
@@ -285,7 +279,7 @@ where
                                     session.active.remove(spec);
                                 }
                                 let params: Vec<String> = specs.iter().map(StreamSpec::as_param).collect();
-                                let cmd = WsSubscriptionCommand::new("UNSUBSCRIBE", params, session.next_id);
+                                let cmd = WsSubscriptionCommand::new(M::Unsubscribe, params, session.next_id);
                                 session.next_id += 1;
                                 let _ = ws_sink.send(Message::Text(cmd.to_string().into())).await;
                             }
