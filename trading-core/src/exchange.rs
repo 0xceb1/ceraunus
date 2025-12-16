@@ -148,7 +148,6 @@ impl Client {
         let mut query_string = format!("timestamp={}", Self::now_u64());
         if let Some(symbol) = symbol {
             query_string.push_str(&format!("&symbol={}", symbol));
-        } else {
         }
         let signed_request = self.sign("")?;
         let response = self
@@ -182,7 +181,7 @@ impl Client {
 
         // TODO: use copy? maybe benchmark first
         let mut query_string =
-            serde_urlencoded::to_string(&request).map_err(MessageCodecError::from)?;
+            serde_urlencoded::to_string(request).map_err(MessageCodecError::from)?;
 
         // add timestamp & symbol & clienOrderId
         let ts = Self::now_u64();

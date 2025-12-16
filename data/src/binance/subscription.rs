@@ -308,6 +308,6 @@ where
         tokio::task::Builder::new()
             .name(name)
             .spawn(self.task())
-            .expect(format!("Failed to spawn task {}", name).as_str())
+            .unwrap_or_else(|_| panic!("Failed to spawn task {}", name))
     }
 }

@@ -196,7 +196,7 @@ async fn main() -> Result<()> {
         match event {
             Event::Account(acct_event) => match acct_event {
                 AccountStream::OrderTradeUpdate(update_event) => {
-                    if let Err(err) = state.on_update_received(update_event.clone()) {
+                    if let Err(err) = state.on_update_received(update_event) {
                         error!(
                             %err,
                             symbol = %update_event.symbol(),
