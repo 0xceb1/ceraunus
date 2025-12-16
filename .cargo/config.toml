@@ -1,2 +1,5 @@
 [build]
 rustflags = ["--cfg", "tokio_unstable"]
+
+[env]
+WORKSPACE_ROOT = { value = "", relative = true }

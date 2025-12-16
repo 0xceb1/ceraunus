@@ -124,7 +124,7 @@ impl DataCenterConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const PATH: &'static str = "../test/test_account_info.csv";
+    const PATH: &'static str = "../config/test_account_info.csv";
     #[test]
     fn test_read_confidential_from_csv() {
         let test_res = AccountConfidential::from_csv("test", PATH);

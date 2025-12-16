@@ -11,11 +11,7 @@ use hmac::{Hmac, Mac};
 use reqwest::{self, Response, StatusCode};
 use serde_json::Value;
 use sha2::Sha256;
-use std::path::Path;
 use uuid::Uuid;
-
-pub const TEST_ENDPOINT_REST: &'static str = "https://demo-fapi.binance.com";
-pub const ENDPOINT_REST: &'static str = "https://fapi.binance.com";
 
 #[derive(Debug)]
 pub struct Client {
@@ -35,32 +31,6 @@ fn map_api_error(status: StatusCode, body: String) -> ApiError {
 }
 
 impl Client {
-    pub fn from_csv(
-        name: &str,
-        csv_path: impl AsRef<Path>,
-        symbol: Symbol,
-        http_client: reqwest::Client,
-    ) -> Result<Self> {
-        let confidential = AccountConfidential::from_csv(name, csv_path)?;
-        let client = match confidential.is_testnet() {
-            true => Self {
-                symbol,
-                api_key: confidential.api_key,
-                api_secret: confidential.api_secret,
-                http_client,
-                endpoint: String::from(TEST_ENDPOINT_REST),
-            },
-            false => Self {
-                symbol,
-                api_key: confidential.api_key,
-                api_secret: confidential.api_secret,
-                http_client,
-                endpoint: String::from(ENDPOINT_REST),
-            },
-        };
-        Ok(client)
-    }
-
     pub fn from_config(
         cfg: &data::config::DataCenterConfig,
         symbol: Symbol,
@@ -236,18 +206,17 @@ mod tests {
     use chrono::{Duration, Utc};
     use data::{
         binance::response::OrderSuccessResp,
+        config::DataCenterConfig,
         order::{OrderKind, OrderStatus, Side, TimeInForce},
     };
     use rust_decimal::{Decimal, dec};
 
     fn make_client() -> Client {
-        Client::from_csv(
-            "test",
-            "../test/test_account_info.csv",
-            "BNBUSDT".parse().unwrap(),
-            reqwest::Client::new(),
-        )
-        .expect("Failed to create client")
+        let cfg_path = std::env::var("CERAUNUS_CONFIG")
+            .unwrap_or_else(|_| "../config/datacenter-config.toml".to_string());
+        let cfg = DataCenterConfig::load(&cfg_path).expect("Failed to load config");
+        Client::from_config(&cfg, "BNBUSDT".parse().unwrap(), reqwest::Client::new())
+            .expect("Failed to create client")
     }
 
     fn make_open_request() -> RequestOpen {
