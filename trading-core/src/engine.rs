@@ -1,4 +1,4 @@
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use enum_map::EnumMap;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     error::{Result as TradingCoreResult, TradingCoreError},
-    models::{Order, OrderBook},
+    models::*,
 };
 use data::{
     binance::{
@@ -42,8 +42,13 @@ pub struct State {
     // orders filled/cancelled/failed to sent (life ended)
     hist_orders: Vec<Uuid>,
 
-    // current open positions in USDT (Buy, Sell)
-    open_position: (Decimal, Decimal),
+    // current net position in quantity
+    position: EnumMap<Symbol, Decimal>,
+
+    start_time: DateTime<Utc>,
+
+    // total traded amount in USDT
+    turnover: Decimal,
 }
 
 impl State {
@@ -53,7 +58,9 @@ impl State {
             order_books: EnumMap::from_fn(|_| None),
             active_orders: IndexMap::with_capacity(128),
             hist_orders: Vec::with_capacity(256),
-            open_position: (Decimal::new(0, 0), Decimal::new(0, 0)),
+            position: EnumMap::default(),
+            start_time: Utc::now(),
+            turnover: Decimal::ZERO,
         }
     }
 
@@ -85,10 +92,6 @@ impl State {
         }
     }
 
-    pub fn first_active_id(&self) -> Option<Uuid> {
-        self.active_orders.first().map(|(k, _)| *k)
-    }
-
     pub fn stale_order_ids(&self, max_age: Duration) -> Vec<Uuid> {
         let now = Utc::now();
 
@@ -109,7 +112,7 @@ impl State {
         &mut self,
         update_event: OrderTradeUpdateEvent,
     ) -> TradingCoreResult<()> {
-        use data::binance::account::ExecutionType::*;
+        use data::binance::account::ExecutionType as E;
         let client_id = update_event.client_order_id();
 
         let order =
@@ -122,15 +125,24 @@ impl State {
 
         order.on_update_received(&update_event);
         match update_event.exec_type() {
-            reason @ (Canceled | Calculated | Expired) => {
+            reason @ (E::Canceled | E::Calculated | E::Expired) => {
                 debug!(%client_id, %reason, "Order removed");
                 self.complete_order(client_id);
             }
-            Trade if update_event.order_status() == OrderStatus::Filled => {
-                debug!(%client_id, reason="TRADE", "Order removed");
-                self.complete_order(client_id);
+            E::Trade => {
+                let symbol = update_event.symbol();
+                let qty = update_event.last_filled_qty();
+                match update_event.side() {
+                    Side::Buy => self.position[symbol] += qty,
+                    Side::Sell => self.position[symbol] -= qty,
+                }
+                self.turnover += update_event.last_filled_amount();
+                if update_event.order_status() == OrderStatus::Filled {
+                    debug!(%client_id, reason="TRADE", "Order removed");
+                    self.complete_order(client_id);
+                }
             }
-            Amendment
+            E::Amendment
                 if matches!(
                     update_event.order_status(),
                     OrderStatus::Filled | OrderStatus::Canceled
@@ -139,9 +151,8 @@ impl State {
                 debug!(%client_id, reason="AMENDMENT", "Order removed");
                 self.complete_order(client_id);
             }
-            _ => {}
+            E::New | E::Amendment => {}
         }
-        // TODO: handling open_position
         Ok(())
     }
 }

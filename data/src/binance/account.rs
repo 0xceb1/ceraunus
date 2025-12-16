@@ -91,6 +91,10 @@ impl OrderTradeUpdateEvent {
         self.update.last_filled_qty
     }
 
+    pub fn last_filled_amount(&self) -> Decimal {
+        self.update.last_filled_price * self.update.last_filled_qty
+    }
+
     pub fn filled_qty(&self) -> Decimal {
         self.update.filled_qty
     }
