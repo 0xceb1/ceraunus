@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use data::binance::account::OrderTradeUpdateEvent;
 use data::binance::market::Depth;
-use data::binance::request::RequestOpen;
 use data::order::*;
 use derive_getters::Getters;
 use reqwest::Client;
@@ -76,19 +75,6 @@ impl Order {
             good_till_date,
             status: None,
         }
-    }
-
-    pub fn to_request(&self) -> RequestOpen {
-        RequestOpen::new(
-            self.symbol,
-            self.side,
-            self.orig_price,
-            self.orig_qty,
-            self.kind,
-            self.client_order_id,
-            self.time_in_force,
-            self.good_till_date,
-        )
     }
 
     pub fn on_update_received(&mut self, update_event: &OrderTradeUpdateEvent) {
