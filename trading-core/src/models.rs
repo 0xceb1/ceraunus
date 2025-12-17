@@ -66,6 +66,7 @@ impl Order {
 
     pub fn to_request(&self) -> RequestOpen {
         RequestOpen::new(
+            self.symbol,
             self.side,
             self.orig_price,
             self.orig_qty,

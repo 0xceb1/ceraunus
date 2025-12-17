@@ -108,7 +108,7 @@ async fn main() -> Result<()> {
         .pool_idle_timeout(IDLE_TIMEOUT)
         .build()?;
 
-    let client = Arc::new(Client::from_config(&cfg, SOLUSDT, http.clone())?);
+    let client = Arc::new(Client::from_config(&cfg, http.clone())?);
 
     let listen_key = client.get_listen_key().await?;
 
@@ -282,7 +282,7 @@ async fn main() -> Result<()> {
                 for stale_id in stale_ids {
                     let client = Arc::clone(&client);
                     tokio::spawn(async move {
-                        match client.cancel_order(stale_id).await {
+                        match client.cancel_order(SOLUSDT, stale_id).await {
                             Ok(cancel) => {
                                 info!(
                                     symbol=%cancel.symbol(),

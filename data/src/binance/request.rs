@@ -8,6 +8,8 @@ use uuid::Uuid;
 #[derive(Debug, Copy, Clone, Deserialize, Serialize, Constructor, Getters)]
 pub struct RequestOpen {
     #[getter(copy)]
+    symbol: Symbol,
+    #[getter(copy)]
     side: Side,
     #[getter(copy)]
     price: Decimal,

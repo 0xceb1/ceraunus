@@ -14,7 +14,6 @@ use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct Client {
-    symbol: Symbol,
     pub api_key: String,
     api_secret: String,
     http_client: reqwest::Client,
@@ -32,7 +31,6 @@ fn map_api_error(status: StatusCode, body: String) -> ApiError {
 impl Client {
     pub fn from_config(
         cfg: &data::config::DataCenterConfig,
-        symbol: Symbol,
         http_client: reqwest::Client,
     ) -> Result<Self> {
         let confidential = AccountConfidential::from_csv(&cfg.account.name, &cfg.account.csv_path)?;
@@ -43,7 +41,6 @@ impl Client {
         };
 
         Ok(Self {
-            symbol,
             api_key: confidential.api_key,
             api_secret: confidential.api_secret,
             http_client,
@@ -185,7 +182,7 @@ impl Client {
 
         // add timestamp & symbol & clienOrderId
         let ts = Self::now_u64();
-        query_string.push_str(&format!("&symbol={}&timestamp={}", self.symbol, ts));
+        query_string.push_str(&format!("&timestamp={}", ts));
 
         let signed_request = self.sign(&query_string)?;
         let response = self.signed_post("/fapi/v1/order", signed_request).await?;
@@ -201,10 +198,10 @@ impl Client {
         Ok(success)
     }
 
-    pub async fn cancel_order(&self, client_id: Uuid) -> Result<OrderSuccessResp> {
+    pub async fn cancel_order(&self, symbol: Symbol, client_id: Uuid) -> Result<OrderSuccessResp> {
         let query_string = format!(
             "symbol={}&origClientOrderId={}&timestamp={}",
-            self.symbol,
+            symbol,
             client_id,
             Self::now_u64()
         );
@@ -230,7 +227,7 @@ mod tests {
     use data::{
         binance::response::OrderSuccessResp,
         config::DataCenterConfig,
-        order::{OrderKind, OrderStatus, Side, Symbol, TimeInForce},
+        order::{OrderKind, OrderStatus, Side, Symbol::BNBUSDT, TimeInForce},
     };
     use rust_decimal::{Decimal, dec};
 
@@ -238,7 +235,7 @@ mod tests {
         let cfg_path = std::env::var("CERAUNUS_CONFIG")
             .unwrap_or_else(|_| "../config/datacenter-config.toml".to_string());
         let cfg = DataCenterConfig::load(&cfg_path).expect("Failed to load config");
-        Client::from_config(&cfg, Symbol::BNBUSDT, reqwest::Client::new())
+        Client::from_config(&cfg,  reqwest::Client::new())
             .expect("Failed to create client")
     }
 
@@ -246,6 +243,7 @@ mod tests {
         let gtd = Utc::now() + Duration::minutes(20);
         let gtd = (gtd.timestamp() * 1000) as u64;
         RequestOpen::new(
+            BNBUSDT,
             Side::Buy,
             dec!(69),
             Decimal::ONE,
@@ -293,7 +291,7 @@ mod tests {
             .expect("Failed to open order");
 
         let cancel_success = client
-            .cancel_order(client_order_id)
+            .cancel_order(BNBUSDT, client_order_id)
             .await
             .expect("Failed to cancel order");
 
