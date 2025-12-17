@@ -20,7 +20,7 @@ anyhow = { version = "1.0" }
 thiserror = { version = "2.0" }
 
 enum-map = { version = "2.7" }
-indexmap = { version = "2.12" }
+rustc-hash = { version = "2.1" }
 rust_decimal = { version = "1.39", features = ["macros", "serde"] }
 uuid = { version = "1.19", features = ["v4"] }
 chrono = { version = "0.4" }

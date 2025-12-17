@@ -17,7 +17,7 @@ derive-getters = { workspace = true, features = ["auto_copy_getters"]}
 derive_more = { workspace = true }
 
 enum-map = { workspace = true }
-indexmap = { workspace = true }
+rustc-hash = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 chrono = { workspace = true }
 

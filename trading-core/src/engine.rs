@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use enum_map::EnumMap;
-use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use uuid::Uuid;
 
 use crate::{
@@ -35,12 +35,12 @@ pub struct State {
     pub order_books: EnumMap<Symbol, Option<OrderBook>>,
 
     // orders that may still receive updates
-    active_orders: IndexMap<Uuid, Order>,
+    active_orders: FxHashMap<Uuid, Order>,
 
     // TODO: add a buffer for handling rejected orders
 
     // orders filled/cancelled/failed to sent (life ended)
-    hist_orders: Vec<Uuid>,
+    hist_orders: FxHashSet<Uuid>,
 
     // current net position in quantity
     position: EnumMap<Symbol, Decimal>,
@@ -56,8 +56,8 @@ impl State {
         Self {
             bbo_levels: EnumMap::from_fn(|_| None),
             order_books: EnumMap::from_fn(|_| None),
-            active_orders: IndexMap::with_capacity(128),
-            hist_orders: Vec::with_capacity(256),
+            active_orders: FxHashMap::with_capacity_and_hasher(128, FxBuildHasher),
+            hist_orders: FxHashSet::with_capacity_and_hasher(1024, FxBuildHasher),
             position: EnumMap::default(),
             start_time: Utc::now(),
             turnover: Decimal::ZERO,
@@ -99,8 +99,9 @@ impl State {
     }
 
     pub fn complete_order(&mut self, id: Uuid) {
-        if self.active_orders.shift_remove(&id).is_some() {
-            self.hist_orders.push(id);
+        // TODO: add warnings for duplicate
+        if self.active_orders.remove(&id).is_some() {
+            self.hist_orders.insert(id);
         }
     }
 
@@ -109,7 +110,7 @@ impl State {
 
         self.active_orders
             .iter()
-            .take_while(|(_, order)| now.signed_duration_since(*order.start_ts()) >= max_age)
+            .take_while(|(_, order)| now.signed_duration_since(order.last_update_ts()) >= max_age)
             .map(|(id, _)| *id)
             .collect()
     }
@@ -127,13 +128,14 @@ impl State {
         use data::binance::account::ExecutionType as E;
         let client_id = update_event.client_order_id();
 
-        let order =
-            self.active_orders
-                .get_mut(&client_id)
-                .ok_or(TradingCoreError::Unrecoverable(format!(
-                    "Untracked order {}",
-                    client_id
-                )))?; // This should never be an error!
+        let order = self.active_orders.get_mut(&client_id).ok_or_else(|| {
+            // TODO: more robust
+            if self.hist_orders.contains(&client_id) {
+                TradingCoreError::Unknown(format!("Order has been removed {}", client_id))
+            } else {
+                TradingCoreError::Unknown(format!("Untracked order {}", client_id))
+            }
+        })?;
 
         order.on_update_received(&update_event);
         match update_event.exec_type() {

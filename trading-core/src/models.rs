@@ -19,10 +19,12 @@ use crate::error::Result as TradingCoreResult;
 pub struct Order {
     symbol: Symbol,
     side: Side,
+    #[getter(copy)]
     start_ts: DateTime<Utc>,
     order_id: Option<u64>,
     #[getter(copy)]
     client_order_id: Uuid,
+    #[getter(copy)]
     last_update_ts: DateTime<Utc>,
 
     kind: OrderKind, // a limit order can be transformed into market order due to price drift

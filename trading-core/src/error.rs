@@ -60,8 +60,8 @@ pub enum TradingCoreError {
     #[error("client initialization failed: {0}")]
     ClientInitialization(String),
 
-    #[error("SOMETHING VERY BAD HAPPENNED :( {0}")]
-    Unrecoverable(String),
+    #[error(":( {0}")]
+    Unknown(String),
 }
 
 impl From<reqwest::Error> for TradingCoreError {
