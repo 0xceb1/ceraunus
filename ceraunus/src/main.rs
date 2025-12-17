@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 // external crates
-use chrono::Utc;
 use anyhow::Result;
+use chrono::Utc;
 use console_subscriber::ConsoleLayer;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
@@ -301,23 +301,25 @@ async fn main() -> Result<()> {
             }
 
             Event::SendOrderTick => {
-
-                let quotes= QuoteStrategy::generate_quotes(SOLUSDT, &state);
+                let quotes = QuoteStrategy::generate_quotes(SOLUSDT, &state);
+                state.register_orders(&quotes);
                 let client = Arc::clone(&client);
                 tokio::spawn(async move {
                     let results = client.open_orders(&quotes).await;
 
                     for result in results {
                         match result {
-                            Ok(success) => 
-                                info!(
-                                    symbol=%success.symbol(),
-                                    price=%success.price(),
-                                    client_order_id=%success.client_order_id(),
-                                    order_id=%success.order_id(),
-                                    "Open order ACK"
-                                ),
-                            Err(err) => warn!(%err, "Open order failed"),
+                            Ok(success) => info!(
+                                symbol=%success.symbol(),
+                                price=%success.price(),
+                                client_order_id=%success.client_order_id(),
+                                order_id=%success.order_id(),
+                                "Open order ACK"
+                            ),
+                            Err(err) => {
+                                // TODO: complete the order
+                                warn!(%err, "Open order failed");
+                            },
                         }
                     }
                 });

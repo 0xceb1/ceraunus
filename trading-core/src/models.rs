@@ -147,11 +147,16 @@ impl OrderBook {
         //TODO: benchmark the perf
         format!(
             "[B:{}|A:{}]",
-            self.bids.iter().rev().take(depth)
+            self.bids
+                .iter()
+                .rev()
+                .take(depth)
                 .map(|(p, q)| format!("{}@{}", q, p))
                 .collect::<Vec<_>>()
                 .join(","),
-            self.asks.iter().take(depth)
+            self.asks
+                .iter()
+                .take(depth)
                 .map(|(p, q)| format!("{}@{}", q, p))
                 .collect::<Vec<_>>()
                 .join(",")

@@ -202,7 +202,7 @@ impl Client {
 
     pub async fn open_orders(&self, requests: &[Order]) -> Vec<Result<OrderSuccessResp>> {
         use futures_util::future::join_all;
-
+        // TODO: the slowest order will block
         join_all(requests.iter().copied().map(|req| self.open_order(req))).await
     }
 

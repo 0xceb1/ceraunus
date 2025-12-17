@@ -90,6 +90,11 @@ impl State {
         self.active_orders.insert(order.client_order_id(), order);
     }
 
+    pub fn register_orders(&mut self, orders: &[Order]) {
+        self.active_orders
+            .extend(orders.iter().copied().map(|o| (o.client_order_id(), o)));
+    }
+
     pub fn get_active_order(&self, id: &Uuid) -> Option<&Order> {
         self.active_orders.get(id)
     }
