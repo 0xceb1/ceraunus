@@ -6,7 +6,7 @@ use data::order::*;
 use derive_getters::Getters;
 use reqwest::Client;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::{self, Formatter};
 use tracing::warn;
@@ -15,25 +15,37 @@ use uuid::Uuid;
 use crate::error::Result as TradingCoreResult;
 
 /// Local record for an order
-#[derive(Debug, Clone, Copy, Getters)]
+#[derive(Debug, Clone, Copy, Serialize, Getters)]
 pub struct Order {
     symbol: Symbol,
     side: Side,
     #[getter(copy)]
+    #[serde(skip)]
     start_ts: DateTime<Utc>,
+    #[serde(skip_serializing)]
     order_id: Option<u64>,
+    #[serde(rename = "newClientOrderId")]
     #[getter(copy)]
     client_order_id: Uuid,
+    #[serde(skip_serializing)]
     #[getter(copy)]
     last_update_ts: DateTime<Utc>,
 
+    #[serde(rename = "type")]
     kind: OrderKind, // a limit order can be transformed into market order due to price drift
+    #[serde(skip_serializing)]
     curr_price: Decimal,
+    #[serde(skip_serializing)]
     curr_qty: Decimal,
+    #[serde(rename = "price")]
     orig_price: Decimal,
+    #[serde(rename = "quantity")]
     orig_qty: Decimal,
+    #[serde(rename = "timeInForce")]
     time_in_force: TimeInForce,
+    #[serde(rename = "goodTillDate", skip_serializing_if = "Option::is_none")]
     good_till_date: Option<u64>,
+    #[serde(skip_serializing)]
     status: Option<OrderStatus>,
 }
 

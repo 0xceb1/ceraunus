@@ -20,7 +20,6 @@ use url::Url;
 use data::{
     binance::market::Depth,
     binance::subscription::{AccountStream, MarketStream, StreamCommand, StreamSpec, WsSession},
-    binance::request::RequestOpen,
     order::{Symbol, Symbol::SOLUSDT},
 };
 use trading_core::{
@@ -303,10 +302,7 @@ async fn main() -> Result<()> {
 
             Event::SendOrderTick => {
 
-                let quotes: Vec<RequestOpen> = QuoteStrategy::generate_quotes(SOLUSDT, &state)
-                    .into_iter()
-                    .map(|order| order.to_request())
-                    .collect();
+                let quotes= QuoteStrategy::generate_quotes(SOLUSDT, &state);
                 let client = Arc::clone(&client);
                 tokio::spawn(async move {
                     let results = client.open_orders(&quotes).await;

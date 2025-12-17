@@ -1,8 +1,9 @@
 use crate::error::{ApiError, MessageCodecError, Result, TradingCoreError};
+use crate::models::Order;
 use chrono::Utc;
 use data::{
     DataError,
-    binance::{request::RequestOpen, response::OrderSuccessResp},
+    binance::response::OrderSuccessResp,
     config::AccountConfidential,
     order::{Symbol, TimeInForce},
 };
@@ -164,7 +165,7 @@ impl Client {
         Ok(orders)
     }
 
-    pub async fn open_order(&self, request: RequestOpen) -> Result<OrderSuccessResp> {
+    pub async fn open_order(&self, request: Order) -> Result<OrderSuccessResp> {
         // TODO: remove this check
         match (request.time_in_force(), request.good_till_date()) {
             (TimeInForce::GoodUntilDate, Some(_)) => {}
@@ -199,7 +200,7 @@ impl Client {
         Ok(success)
     }
 
-    pub async fn open_orders(&self, requests: &[RequestOpen]) -> Vec<Result<OrderSuccessResp>> {
+    pub async fn open_orders(&self, requests: &[Order]) -> Vec<Result<OrderSuccessResp>> {
         use futures_util::future::join_all;
 
         join_all(requests.iter().copied().map(|req| self.open_order(req))).await
@@ -245,16 +246,15 @@ mod tests {
         Client::from_config(&cfg, reqwest::Client::new()).expect("Failed to create client")
     }
 
-    fn make_open_request() -> RequestOpen {
+    fn make_order() -> Order {
         let gtd = Utc::now() + Duration::minutes(20);
         let gtd = (gtd.timestamp() * 1000) as u64;
-        RequestOpen::new(
+        Order::new(
             BNBUSDT,
             Side::Buy,
+            OrderKind::Limit,
             dec!(69),
             Decimal::ONE,
-            OrderKind::Limit,
-            Uuid::new_v4(),
             TimeInForce::GoodUntilDate,
             Some(gtd),
         )
@@ -274,7 +274,7 @@ mod tests {
 
     #[tokio::test()]
     async fn test_open_order() {
-        let order_request = make_open_request();
+        let order_request = make_order();
         let client = make_client();
 
         let success: OrderSuccessResp = client
@@ -287,7 +287,7 @@ mod tests {
 
     #[tokio::test()]
     async fn test_cancel_order() {
-        let order_request = make_open_request();
+        let order_request = make_order();
         let client = make_client();
         let client_order_id = order_request.client_order_id();
 
