@@ -20,6 +20,7 @@ use url::Url;
 use data::{
     binance::market::Depth,
     binance::subscription::{AccountStream, MarketStream, StreamCommand, StreamSpec, WsSession},
+    binance::request::RequestOpen,
     order::{Symbol, Symbol::SOLUSDT},
 };
 use trading_core::{
@@ -301,49 +302,29 @@ async fn main() -> Result<()> {
             }
 
             Event::SendOrderTick => {
-                if let Some((bid, ask)) = QuoteStrategy::generate_quotes(SOLUSDT, &state) {
-                    let bid_request = bid.to_request();
-                    let ask_request = ask.to_request();
-                    state.register_order(bid);
-                    state.register_order(ask);
-                    let client = Arc::clone(&client);
-                    tokio::spawn(async move {
-                        let (bid_res, ask_res) = tokio::join!(
-                            client.open_order(bid_request),
-                            client.open_order(ask_request),
-                        );
 
-                        match bid_res {
-                            Ok(success) => {
+                let quotes: Vec<RequestOpen> = QuoteStrategy::generate_quotes(SOLUSDT, &state)
+                    .into_iter()
+                    .map(|order| order.to_request())
+                    .collect();
+                let client = Arc::clone(&client);
+                tokio::spawn(async move {
+                    let results = client.open_orders(&quotes).await;
+
+                    for result in results {
+                        match result {
+                            Ok(success) => 
                                 info!(
                                     symbol=%success.symbol(),
                                     price=%success.price(),
                                     client_order_id=%success.client_order_id(),
                                     order_id=%success.order_id(),
-                                    "Open bid order ACK"
-                                );
-                            }
-                            Err(err) => {
-                                warn!(%err, "Open bid order failed");
-                            }
+                                    "Open order ACK"
+                                ),
+                            Err(err) => warn!(%err, "Open order failed"),
                         }
-
-                        match ask_res {
-                            Ok(success) => {
-                                info!(
-                                    symbol=%success.symbol(),
-                                    price=%success.price(),
-                                    client_order_id=%success.client_order_id(),
-                                    order_id=%success.order_id(),
-                                    "Open ask order ACK"
-                                );
-                            }
-                            Err(err) => {
-                                warn!(%err, "Open ask order failed");
-                            }
-                        };
-                    });
-                }
+                    }
+                });
             }
 
             Event::ReportStateTick => {

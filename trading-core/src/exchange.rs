@@ -141,7 +141,7 @@ impl Client {
         Ok(listen_key)
     }
 
-    pub async fn get_open_orders(&self, symbol: Option<Symbol>) -> Result<Box<[OrderSuccessResp]>> {
+    pub async fn get_open_orders(&self, symbol: Option<Symbol>) -> Result<Vec<OrderSuccessResp>> {
         let mut query_string = format!("timestamp={}", Self::now_u64());
         if let Some(symbol) = symbol {
             query_string.push_str(&format!("&symbol={}", symbol));
@@ -159,12 +159,13 @@ impl Client {
             return Err(TradingCoreError::from(api_err));
         }
 
-        let orders: Box<[OrderSuccessResp]> = serde_json::from_str(&body)?;
+        let orders: Vec<OrderSuccessResp> = serde_json::from_str(&body)?;
 
         Ok(orders)
     }
 
     pub async fn open_order(&self, request: RequestOpen) -> Result<OrderSuccessResp> {
+        // TODO: remove this check
         match (request.time_in_force(), request.good_till_date()) {
             (TimeInForce::GoodUntilDate, Some(_)) => {}
             (TimeInForce::GoodUntilDate, None) | (_, Some(_)) => {
@@ -196,6 +197,12 @@ impl Client {
 
         let success: OrderSuccessResp = serde_json::from_str(&body)?;
         Ok(success)
+    }
+
+    pub async fn open_orders(&self, requests: &[RequestOpen]) -> Vec<Result<OrderSuccessResp>> {
+        use futures_util::future::join_all;
+
+        join_all(requests.iter().copied().map(|req| self.open_order(req))).await
     }
 
     pub async fn cancel_order(&self, symbol: Symbol, client_id: Uuid) -> Result<OrderSuccessResp> {
@@ -235,8 +242,7 @@ mod tests {
         let cfg_path = std::env::var("CERAUNUS_CONFIG")
             .unwrap_or_else(|_| "../config/datacenter-config.toml".to_string());
         let cfg = DataCenterConfig::load(&cfg_path).expect("Failed to load config");
-        Client::from_config(&cfg,  reqwest::Client::new())
-            .expect("Failed to create client")
+        Client::from_config(&cfg, reqwest::Client::new()).expect("Failed to create client")
     }
 
     fn make_open_request() -> RequestOpen {

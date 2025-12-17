@@ -2092,6 +2092,9 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "socket2"
@@ -2601,6 +2604,7 @@ dependencies = [
  "derive-getters",
  "derive_more",
  "enum-map",
+ "futures-util",
  "hex",
  "hmac",
  "openssl",
@@ -2611,6 +2615,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "sha2",
+ "smallvec",
  "thiserror",
  "tokio",
  "tracing",
