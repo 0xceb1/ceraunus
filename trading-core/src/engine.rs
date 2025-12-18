@@ -115,7 +115,7 @@ impl State {
 
         self.active_orders
             .iter()
-            .take_while(|(_, order)| now.signed_duration_since(order.last_update_ts()) >= max_age)
+            .filter(|(_, order)| now.signed_duration_since(order.last_update_ts()) >= max_age)
             .map(|(id, _)| *id)
             .collect()
     }
