@@ -156,7 +156,7 @@ async fn main() -> Result<()> {
     acct_cmd_tx
         .send(StreamCommand::Subscribe(vec![
             StreamSpec::OrderTradeUpdate,
-            StreamSpec::TradeLite,
+            // StreamSpec::TradeLite,
         ]))
         .await?;
 
