@@ -253,6 +253,7 @@ where
                                 let event = E::parse(&txt);
                                 let _ = session.evt_tx.send(event).await;
                             }
+                            Some(Ok(Message::Ping(_))) => {}
                             Some(Ok(raw)) => {
                                 let msg_type = match &raw {
                                     Message::Text(_) => "text",
