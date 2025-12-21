@@ -19,6 +19,15 @@ impl From<(Decimal, Decimal)> for Level {
     }
 }
 
+impl From<(&Decimal, &Decimal)> for Level {
+    fn from((price, quantity): (&Decimal, &Decimal)) -> Self {
+        Self {
+            price: *price,
+            quantity: *quantity,
+        }
+    }
+}
+
 impl From<Level> for (Decimal, Decimal) {
     fn from(level: Level) -> Self {
         (level.price, level.quantity)

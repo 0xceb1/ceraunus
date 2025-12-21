@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use data::binance::account::OrderTradeUpdateEvent;
-use data::binance::market::Depth;
+use data::binance::market::{Depth, Level};
 use data::order::*;
 use derive_getters::Getters;
 use reqwest::Client;
@@ -12,6 +12,8 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::error::Result as TradingCoreResult;
+
+type BboPair = (Level, Level); // (bid_level, ask_level)
 
 /// Local record for an order
 #[derive(Debug, Clone, Copy, Serialize, Getters)]
@@ -185,6 +187,12 @@ impl OrderBook {
             }
         }
     }
+
+    pub fn get_bbo(&self) -> Option<BboPair> {
+        let (bp, bq) = self.bids.last_key_value()?;
+        let (ap, aq) = self.asks.first_key_value()?;
+        Some((Level::from((bp, bq)), Level::from((ap, aq))))
+    } 
 }
 
 impl fmt::Display for OrderBook {
