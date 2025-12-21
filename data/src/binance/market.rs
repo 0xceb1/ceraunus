@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 type OrderBookUpdateId = u64;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 #[serde(from = "(Decimal, Decimal)")]
 pub struct Level {
     pub price: Decimal,

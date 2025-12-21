@@ -232,6 +232,13 @@ async fn main() -> Result<()> {
                         {
                             // TODO: recheck the gap-detection logic here
                             ob.extend(depth);
+                            if ob.get_bbo() != state.bbo_levels[SOLUSDT] {
+                                warn!(
+                                    ob_bbo = ?ob.get_bbo(),
+                                    bbo = ?state.bbo_levels[SOLUSDT],
+                                    "Orderbook and BBO level do not match"
+                                )
+                            } 
                         } else {
                             warn!(
                                 last_final_update_id = %depth.last_final_update_id(),
