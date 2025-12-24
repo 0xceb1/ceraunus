@@ -24,6 +24,12 @@ impl From<csv::Error> for DataError {
 /// All errors related to config loading
 #[derive(Debug, Error)]
 pub enum ConfigError {
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("toml error: {0}")]
+    Toml(#[from] toml::de::Error),
+
     #[error("csv error: {0}")]
     Csv(#[from] csv::Error),
 

@@ -1,13 +1,20 @@
-use chrono::{Duration, Utc};
-use indexmap::IndexMap;
+use chrono::{DateTime, Duration, Utc};
+use enum_map::EnumMap;
 use rust_decimal::Decimal;
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use uuid::Uuid;
 
 use crate::{
     error::{Result as TradingCoreResult, TradingCoreError},
-    models::{Order, OrderBook},
+    models::*,
 };
-use data::{binance::account::OrderTradeUpdateEvent, order::*};
+use data::{
+    binance::{
+        account::OrderTradeUpdateEvent,
+        market::{BookTicker, Level},
+    },
+    order::*,
+};
 use tracing::debug;
 
 #[allow(dead_code)]
@@ -16,58 +23,78 @@ trait Processor<E> {
     fn process(&mut self, event: E) -> Self::Output;
 }
 
+type BboPair = (Level, Level);
+
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct State {
+    // best-available ask & bid
+    pub bbo_levels: EnumMap<Symbol, Option<BboPair>>, // (bid_level, ask_level)
+
     // local order book
-    order_books: IndexMap<Symbol, OrderBook>,
+    pub order_books: EnumMap<Symbol, Option<OrderBook>>,
 
     // orders that may still receive updates
-    active_orders: IndexMap<Uuid, Order>,
+    active_orders: FxHashMap<Uuid, Order>,
 
     // TODO: add a buffer for handling rejected orders
 
     // orders filled/cancelled/failed to sent (life ended)
-    hist_orders: Vec<Uuid>,
+    hist_orders: FxHashSet<Uuid>,
 
-    // current open positions in USDT (Buy, Sell)
-    open_position: (Decimal, Decimal),
+    pub pnls: EnumMap<Symbol, ProfitAndLoss>,
+
+    start_time: DateTime<Utc>,
+
+    // total traded amount in USDT
+    // TODO: deprecate in the future
+    turnover: Decimal,
 }
 
 impl State {
     pub fn new() -> Self {
         Self {
-            order_books: IndexMap::with_capacity(1),
-            active_orders: IndexMap::with_capacity(64),
-            hist_orders: Vec::with_capacity(256),
-            open_position: (Decimal::new(0, 0), Decimal::new(0, 0)),
+            bbo_levels: EnumMap::from_fn(|_| None),
+            order_books: EnumMap::from_fn(|_| None),
+            active_orders: FxHashMap::with_capacity_and_hasher(128, FxBuildHasher),
+            hist_orders: FxHashSet::with_capacity_and_hasher(1024, FxBuildHasher),
+            // TODO: construct from init pos
+            pnls: EnumMap::from_fn(|_| ProfitAndLoss::new(Decimal::ZERO, Decimal::ZERO)),
+            start_time: Utc::now(),
+            turnover: Decimal::ZERO,
         }
     }
 
+    pub fn start_time(&self) -> DateTime<Utc> {
+        self.start_time
+    }
+
+    pub fn turnover(&self) -> Decimal {
+        self.turnover
+    }
+
+    #[inline]
+    pub fn get_position(&self, symbol: Symbol) -> Decimal {
+        self.pnls[symbol].position()
+    }
+
     // Order book management
-    pub fn get_order_book(&self, symbol: &Symbol) -> Option<&OrderBook> {
-        self.order_books.get(symbol)
+    pub fn remove_order_book(&mut self, symbol: Symbol) {
+        self.order_books[symbol] = None;
     }
 
-    pub fn get_order_book_mut(&mut self, symbol: &Symbol) -> Option<&mut OrderBook> {
-        self.order_books.get_mut(symbol)
-    }
-
-    pub fn set_order_book(&mut self, symbol: Symbol, ob: OrderBook) {
-        self.order_books.insert(symbol, ob);
-    }
-
-    pub fn remove_order_book(&mut self, symbol: &Symbol) -> Option<OrderBook> {
-        self.order_books.swap_remove(symbol)
-    }
-
-    pub fn has_order_book(&self, symbol: &Symbol) -> bool {
-        self.order_books.contains_key(symbol)
+    pub fn has_order_book(&self, symbol: Symbol) -> bool {
+        self.order_books[symbol].is_some()
     }
 
     // Active order tracking
-    pub fn track_order(&mut self, order: Order) {
+    pub fn register_order(&mut self, order: Order) {
         self.active_orders.insert(order.client_order_id(), order);
+    }
+
+    pub fn register_orders(&mut self, orders: &[Order]) {
+        self.active_orders
+            .extend(orders.iter().copied().map(|o| (o.client_order_id(), o)));
     }
 
     pub fn get_active_order(&self, id: &Uuid) -> Option<&Order> {
@@ -79,13 +106,10 @@ impl State {
     }
 
     pub fn complete_order(&mut self, id: Uuid) {
-        if self.active_orders.shift_remove(&id).is_some() {
-            self.hist_orders.push(id);
+        // TODO: add warnings for duplicate
+        if self.active_orders.remove(&id).is_some() {
+            self.hist_orders.insert(id);
         }
-    }
-
-    pub fn first_active_id(&self) -> Option<Uuid> {
-        self.active_orders.first().map(|(k, _)| *k)
     }
 
     pub fn stale_order_ids(&self, max_age: Duration) -> Vec<Uuid> {
@@ -93,37 +117,50 @@ impl State {
 
         self.active_orders
             .iter()
-            .take_while(|(_, order)| now.signed_duration_since(*order.start_ts()) >= max_age)
+            .filter(|(_, order)| now.signed_duration_since(order.last_update_ts()) >= max_age)
             .map(|(id, _)| *id)
             .collect()
     }
 
+    pub fn on_book_ticker_received(&mut self, book_ticker: BookTicker) {
+        let bid_level = Level::from((book_ticker.bid_price(), book_ticker.bid_qty()));
+        let ask_level = Level::from((book_ticker.ask_price(), book_ticker.ask_qty()));
+        self.bbo_levels[book_ticker.symbol()] = Some((bid_level, ask_level));
+    }
+
     pub fn on_update_received(
         &mut self,
-        update_event: OrderTradeUpdateEvent,
+        update_event: &OrderTradeUpdateEvent,
     ) -> TradingCoreResult<()> {
-        use data::binance::account::ExecutionType::*;
+        use TradingCoreError as Err;
+        use data::binance::account::ExecutionType as E;
         let client_id = update_event.client_order_id();
 
-        let order =
-            self.active_orders
-                .get_mut(&client_id)
-                .ok_or(TradingCoreError::Unrecoverable(format!(
-                    "Untracked order {}",
-                    client_id
-                )))?; // This should never be an error!
+        let order = self.active_orders.get_mut(&client_id).ok_or_else(|| {
+            // TODO: more robust
+            if self.hist_orders.contains(&client_id) {
+                Err::Unknown(format!("Order has been removed {}", client_id))
+            } else {
+                Err::Unknown(format!("Untracked order {}", client_id))
+            }
+        })?;
 
-        order.on_update_received(&update_event);
+        order.on_update_received(update_event);
         match update_event.exec_type() {
-            reason @ (Canceled | Calculated | Expired) => {
+            reason @ (E::Canceled | E::Calculated | E::Expired) => {
                 debug!(%client_id, %reason, "Order removed");
                 self.complete_order(client_id);
             }
-            Trade if update_event.order_status() == OrderStatus::Filled => {
-                debug!(%client_id, reason="TRADE", "Order removed");
-                self.complete_order(client_id);
+            E::Trade => {
+                let symbol = update_event.symbol();
+                self.pnls[symbol].on_update_received(update_event);
+                self.turnover += update_event.last_filled_amount();
+                if update_event.order_status() == OrderStatus::Filled {
+                    debug!(%client_id, reason="TRADE", "Order removed");
+                    self.complete_order(client_id);
+                }
             }
-            Amendment
+            E::Amendment
                 if matches!(
                     update_event.order_status(),
                     OrderStatus::Filled | OrderStatus::Canceled
@@ -132,9 +169,8 @@ impl State {
                 debug!(%client_id, reason="AMENDMENT", "Order removed");
                 self.complete_order(client_id);
             }
-            _ => {}
+            E::New | E::Amendment => {}
         }
-        // TODO: handling open_position
         Ok(())
     }
 }

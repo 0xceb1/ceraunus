@@ -12,11 +12,14 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+futures-util = { workspace = true }
 
-derive-getters = { workspace = true, features = ["auto_copy_getters"]}
+derive-getters = { workspace = true, features = ["auto_copy_getters"] }
 derive_more = { workspace = true }
 
-indexmap = { workspace = true }
+enum-map = { workspace = true }
+rustc-hash = { workspace = true }
+smallvec = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 chrono = { workspace = true }
 

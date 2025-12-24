@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 // external crates
 use anyhow::Result;
 use chrono::Utc;
-use rust_decimal::{Decimal, dec};
+use console_subscriber::ConsoleLayer;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tracing::{error, info, warn};
@@ -22,25 +22,18 @@ use data::{
     binance::subscription::{
         AccountStream, MarketStream, StreamCommand, StreamSpec, Timed, WsSession,
     },
-    order::{OrderKind, Side, Symbol, Symbol::SOLUSDT, TimeInForce},
+    order::{Symbol, Symbol::SOLUSDT},
 };
 use trading_core::{
     OrderBook, Result as ClientResult,
     engine::State,
-    exchange::{Client, TEST_ENDPOINT_REST},
-    models::Order,
+    exchange::Client,
+    strategy::{QuoteStrategy, Strategy},
 };
-
-const ACCOUNT_NAME: &str = "test";
-const ACCOUNT_INFO_PATH: &str = "./test/test_account_info.csv";
-const LOG_PATH: &str = "./logs";
 
 const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const HTTP_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 const STALE_ORDER_THRESHOLD: chrono::Duration = chrono::Duration::seconds(30);
-const TEST_ENDPOINT_WS: &str = "wss://fstream.binancefuture.com/ws";
-#[allow(dead_code)]
-const ENDPOINT_WS: &str = "wss://fstream.binance.com/ws";
 
 #[derive(Debug)]
 enum Event {
@@ -49,15 +42,39 @@ enum Event {
     SnapshotDone(ClientResult<OrderBook>),
     SendOrderTick,
     CancelOrderTick,
+    ReportStateTick,
     KeepaliveTick,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let cfg_path = std::env::var("CERAUNUS_CONFIG")
+        .unwrap_or_else(|_| "./config/datacenter-config.toml".to_string());
+    let cfg = data::config::DataCenterConfig::load(&cfg_path)?;
+
+    if cfg.logging.file_log {
+        std::fs::create_dir_all(&cfg.logging.file.dir)?;
+    }
+
     // Configure tracing subscriber
-    let file_appender = tracing_appender::rolling::daily(LOG_PATH, "test.log");
+    let file_appender =
+        tracing_appender::rolling::daily(&cfg.logging.file.dir, &cfg.logging.file.name);
     let (nb_file_writer, _guard1) = tracing_appender::non_blocking(file_appender);
     let (nb_console_writer, _guard2) = tracing_appender::non_blocking(std::io::stdout());
+
+    let file_filter = cfg
+        .logging
+        .file
+        .level
+        .parse::<LevelFilter>()
+        .unwrap_or(LevelFilter::INFO);
+    let console_filter = cfg
+        .logging
+        .console
+        .level
+        .parse::<LevelFilter>()
+        .unwrap_or(LevelFilter::INFO);
+
     let file_layer = fmt::layer()
         .with_writer(nb_file_writer)
         .with_target(false)
@@ -65,21 +82,25 @@ async fn main() -> Result<()> {
         .with_line_number(true)
         .with_thread_ids(false)
         .with_ansi(false)
-        .with_filter(LevelFilter::DEBUG);
+        .with_filter(file_filter);
 
-    let console_layer = fmt::layer()
+    let stdout_layer = fmt::layer()
         .with_writer(nb_console_writer)
         .with_target(false)
         .with_file(true)
         .with_line_number(true)
         .with_thread_ids(false)
         .compact()
-        .pretty()
-        .with_filter(LevelFilter::DEBUG);
+        // .pretty()
+        .with_filter(console_filter);
+
+    // Tokio console layer (enable/configure via env vars; see tokio-console docs)
+    let tokio_console_layer = ConsoleLayer::builder().with_default_env().spawn();
 
     Registry::default()
-        .with(console_layer)
+        .with(stdout_layer)
         .with(file_layer)
+        .with(tokio_console_layer)
         .init();
 
     // build shared http client
@@ -89,17 +110,22 @@ async fn main() -> Result<()> {
         .pool_idle_timeout(IDLE_TIMEOUT)
         .build()?;
 
-    let client = Arc::new(Client::new(
-        ACCOUNT_NAME,
-        ACCOUNT_INFO_PATH,
-        SOLUSDT,
-        http.clone(),
-    )?);
+    let client = Arc::new(Client::from_config(&cfg, http.clone())?);
 
     let listen_key = client.get_listen_key().await?;
 
-    let mkt_url = Url::parse(TEST_ENDPOINT_WS)?;
-    let acct_url = Url::parse(&format!("{}/{}", TEST_ENDPOINT_WS, listen_key))?;
+    let ws_url = match cfg.account.environment {
+        data::config::Environment::Production => &cfg.exchange.ws.endpoints.production,
+        data::config::Environment::Testnet => &cfg.exchange.ws.endpoints.testnet,
+    };
+
+    let rest_url = match cfg.account.environment {
+        data::config::Environment::Production => &cfg.exchange.rest.endpoints.production,
+        data::config::Environment::Testnet => &cfg.exchange.rest.endpoints.testnet,
+    };
+
+    let mkt_url = Url::parse(ws_url)?;
+    let acct_url = Url::parse(&format!("{}/{}", ws_url, listen_key))?;
 
     let ws_config = WebSocketConfig::default()
         .write_buffer_size(0)
@@ -115,31 +141,44 @@ async fn main() -> Result<()> {
     let ws = WsSession::market(mkt_url, ws_config, cmd_rx, evt_tx);
     let acct_ws = WsSession::account(acct_url, ws_config, acct_cmd_rx, acct_evt_tx);
 
-    ws.spawn();
-    acct_ws.spawn();
+    ws.spawn_named("ws.market.session");
+    acct_ws.spawn_named("ws.account.session");
 
     cmd_tx
-        .send(StreamCommand::Subscribe(vec![StreamSpec::Depth {
-            symbol: SOLUSDT,
-            levels: None,
-            interval_ms: None,
-        }]))
+        .send(StreamCommand::Subscribe(vec![
+            StreamSpec::Depth {
+                symbol: SOLUSDT,
+                levels: None,
+                interval_ms: None,
+            },
+            StreamSpec::BookTicker { symbol: SOLUSDT },
+        ]))
         .await?;
 
     acct_cmd_tx
-        .send(StreamCommand::Subscribe(vec![StreamSpec::OrderTradeUpdate]))
+        .send(StreamCommand::Subscribe(vec![
+            StreamSpec::OrderTradeUpdate,
+            // StreamSpec::TradeLite,
+        ]))
         .await?;
 
     info!("----------INITILIAZATION FINISHED----------");
 
     let mut state: State = State::new();
 
-    let mut depth_buffer: Vec<Depth> = Vec::with_capacity(8);
-    let mut snapshot_fut = snapshot_task(SOLUSDT, http.clone(), 1000, Duration::from_millis(1000));
     let mut depth_counter: u64 = 0;
+    let mut depth_buffer: Vec<Depth> = Vec::with_capacity(8);
+    let mut snapshot_fut = snapshot_task(
+        SOLUSDT,
+        http.clone(),
+        1000,
+        Duration::from_millis(1000),
+        rest_url.clone(),
+    );
     let mut keepalive_interval = tokio::time::interval(Duration::from_secs(50 * 60));
     let mut send_order_interval = tokio::time::interval(Duration::from_secs(10));
     let mut cancel_order_interval = tokio::time::interval(Duration::from_secs(60));
+    let mut report_state_interval = tokio::time::interval(Duration::from_secs(60));
 
     // MAIN EVENT LOOP
     loop {
@@ -150,11 +189,13 @@ async fn main() -> Result<()> {
 
             Some(timed) = evt_rx.recv() => Event::Market(timed),
 
-            snapshot_res = &mut snapshot_fut, if !state.has_order_book(&SOLUSDT) => Event::SnapshotDone(snapshot_res),
+            _ = report_state_interval.tick() => Event::ReportStateTick,
 
-            _ = send_order_interval.tick(), if state.has_order_book(&SOLUSDT) => Event::SendOrderTick,
+            _ = send_order_interval.tick(), if state.has_order_book(SOLUSDT) => Event::SendOrderTick,
 
             _ = cancel_order_interval.tick() => Event::CancelOrderTick,
+
+            snapshot_res = &mut snapshot_fut, if !state.has_order_book(SOLUSDT) => Event::SnapshotDone(snapshot_res),
 
             _ = keepalive_interval.tick() => Event::KeepaliveTick,
         };
@@ -171,7 +212,7 @@ async fn main() -> Result<()> {
                             .num_milliseconds();
 
                         let update_start = Instant::now();
-                        let result = state.on_update_received(update_event.clone());
+                        let result = state.on_update_received(&update_event);
                         let update_duration = update_start.elapsed();
 
                         tracing::debug!(
@@ -188,11 +229,14 @@ async fn main() -> Result<()> {
                                 symbol = %update_event.symbol(),
                                 order_id = %update_event.order_id(),
                                 client_order_id = %update_event.client_order_id(),
-                                exec_type = ?update_event.exec_type(),
-                                order_status = ?update_event.order_status(),
+                                exec_type = %update_event.exec_type(),
+                                order_status = %update_event.order_status(),
                                 "Failed to process order update"
                             );
                         }
+                    }
+                    AccountStream::TradeLite(trade_lite) => {
+                        trade_lite.log();
                     }
                     AccountStream::AccountUpdate(update_event) => {
                         let network_latency_ms = timed
@@ -217,7 +261,6 @@ async fn main() -> Result<()> {
                             "Account update received"
                         );
                     }
-                    AccountStream::TradeLite(_) => {}
                     AccountStream::Raw(_) => {}
                 }
             }
@@ -234,11 +277,10 @@ async fn main() -> Result<()> {
 
                         depth_counter += 1;
 
-                        if let Some(ob) = state.get_order_book_mut(&SOLUSDT) {
+                        if let Some(ob) = state.order_books[SOLUSDT].as_mut() {
                             if (depth.last_final_update_id()..=depth.final_update_id())
                                 .contains(&ob.last_update_id())
                             {
-                                // TODO: recheck the gap-detection logic here
                                 let update_start = Instant::now();
                                 ob.extend(depth);
                                 let update_duration = update_start.elapsed();
@@ -251,7 +293,15 @@ async fn main() -> Result<()> {
                                     "Depth stream timing"
                                 );
 
-                                if depth_counter.is_multiple_of(100) {
+                                if ob.get_bbo() != state.bbo_levels[SOLUSDT] {
+                                    warn!(
+                                        ob_bbo = ?ob.get_bbo(),
+                                        bbo = ?state.bbo_levels[SOLUSDT],
+                                        "Orderbook and BBO level do not match"
+                                    )
+                                }
+
+                                if depth_counter % 100 == 0 {
                                     info!(
                                         last_update_id = %ob.last_update_id(),
                                         bids = %ob.bids().len(),
@@ -266,13 +316,14 @@ async fn main() -> Result<()> {
                                     final_update_id = %depth.final_update_id(),
                                     "Gap detected in depth updates"
                                 );
-                                state.remove_order_book(&SOLUSDT);
+                                state.remove_order_book(SOLUSDT);
                                 depth_buffer.clear();
                                 snapshot_fut = snapshot_task(
                                     SOLUSDT,
                                     http.clone(),
                                     1000,
                                     Duration::from_millis(1000),
+                                    rest_url.clone(),
                                 );
                             }
                         } else {
@@ -284,8 +335,9 @@ async fn main() -> Result<()> {
                             );
                         }
                     }
-
-                    // TODO: we still construct the events even if they are immediately dropped
+                    MarketStream::BookTicker(book_ticker) => {
+                        state.on_book_ticker_received(book_ticker);
+                    }
                     MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::Raw(_) => {}
                 }
             }
@@ -302,7 +354,7 @@ async fn main() -> Result<()> {
                     }
                 }
                 info!(last_update_id=%ob.last_update_id(), "Order book ready");
-                state.set_order_book(SOLUSDT, ob);
+                state.order_books[SOLUSDT] = Some(ob);
             }
 
             Event::CancelOrderTick => {
@@ -311,7 +363,7 @@ async fn main() -> Result<()> {
                 for stale_id in stale_ids {
                     let client = Arc::clone(&client);
                     tokio::spawn(async move {
-                        match client.cancel_order(stale_id).await {
+                        match client.cancel_order(SOLUSDT, stale_id).await {
                             Ok(cancel) => {
                                 info!(
                                     symbol=%cancel.symbol(),
@@ -330,26 +382,41 @@ async fn main() -> Result<()> {
             }
 
             Event::SendOrderTick => {
-                let order = create_order();
-                let request = order.to_request();
-                state.track_order(order);
+                let quotes = QuoteStrategy::generate_quotes(SOLUSDT, &state);
+                state.register_orders(&quotes);
                 let client = Arc::clone(&client);
                 tokio::spawn(async move {
-                    match client.open_order(request).await {
-                        Ok(success) => {
-                            info!(
+                    let results = client.open_orders(&quotes).await;
+
+                    for result in results {
+                        match result {
+                            Ok(success) => info!(
                                 symbol=%success.symbol(),
                                 price=%success.price(),
                                 client_order_id=%success.client_order_id(),
                                 order_id=%success.order_id(),
                                 "Open order ACK"
-                            );
-                        }
-                        Err(err) => {
-                            warn!(%err, "Open order failed");
+                            ),
+                            Err(err) => {
+                                // TODO: complete the order
+                                warn!(%err, "Open order failed");
+                            }
                         }
                     }
                 });
+            }
+
+            Event::ReportStateTick => {
+                info!(
+                    elapsed = %(Utc::now() - state.start_time()),
+                    turnover = %state.turnover(),
+                    curr_pos = %state.get_position(SOLUSDT),
+                    exec_pnl = %state.pnls[SOLUSDT].execution_pnl(),
+                    unrealized_pnl = %state.pnls[SOLUSDT].unrealized_pnl(),
+                    realized_pnl = %state.pnls[SOLUSDT].realized_pnl(),
+                    ob = ?state.order_books[SOLUSDT].as_ref().map(|ob| ob.show(5)),
+                    "Trading Summary"
+                );
             }
 
             Event::KeepaliveTick => {
@@ -370,25 +437,12 @@ fn snapshot_task(
     http: reqwest::Client,
     depth: u16,
     delay: Duration,
+    rest_endpoint: String,
 ) -> Pin<Box<dyn Future<Output = ClientResult<OrderBook>> + Send>> {
     Box::pin(async move {
         if !delay.is_zero() {
             tokio::time::sleep(delay).await;
         }
-        OrderBook::from_snapshot(symbol, depth, TEST_ENDPOINT_REST, http).await
+        OrderBook::from_snapshot(symbol, depth, &rest_endpoint, http).await
     })
-}
-
-fn create_order() -> Order {
-    let ts = std::cmp::max(Utc::now().timestamp_millis() % 10000, 6969);
-
-    Order::new(
-        SOLUSDT,
-        Side::Buy,
-        OrderKind::Limit,
-        Decimal::new(ts, 2),
-        dec!(1),
-        TimeInForce::GoodUntilCancel,
-        None,
-    )
 }

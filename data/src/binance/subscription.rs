@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
+use derive_more::Display;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt, time::Instant};
-use strum_macros::{AsRefStr, Display, EnumString};
 use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_tungstenite::{
     connect_async_with_config,
@@ -27,10 +27,10 @@ pub struct Timed<E> {
     pub parse_duration: std::time::Duration,
 }
 
-#[derive(Debug, Serialize, Clone, Display, AsRefStr, EnumString)]
+#[derive(Debug, Serialize, Clone, Display)]
 #[serde(rename_all = "UPPERCASE")]
-#[strum(serialize_all = "UPPERCASE")]
-enum WsSubscriptionMethod {
+#[display(rename_all = "UPPERCASE")]
+pub(crate) enum WsSubscriptionMethod {
     Subscribe,
     Unsubscribe,
 }
@@ -51,22 +51,22 @@ impl fmt::Display for WsSubscriptionCommand {
 }
 
 impl WsSubscriptionCommand {
-    pub fn new(method: &str, params: Vec<String>, id: u64) -> Self {
-        Self {
-            method: method.parse().expect("Check your spell!"),
-            params,
-            id,
-        }
+    pub(crate) fn new(method: WsSubscriptionMethod, params: Vec<String>, id: u64) -> Self {
+        Self { method, params, id }
     }
 }
 
 /// Available streams
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum StreamSpec {
+    // market streams
     Depth {
         symbol: Symbol,
         levels: Option<u16>,
         interval_ms: Option<u16>,
+    },
+    BookTicker {
+        symbol: Symbol,
     },
     AggTrade {
         symbol: Symbol,
@@ -74,6 +74,8 @@ pub enum StreamSpec {
     Trade {
         symbol: Symbol,
     },
+
+    // account streams
     OrderTradeUpdate,
     TradeLite,
     AccountUpdate,
@@ -81,23 +83,24 @@ pub enum StreamSpec {
 
 impl StreamSpec {
     fn as_param(&self) -> String {
-        use StreamSpec::*;
+        use StreamSpec as S;
         match self {
-            Depth {
+            S::Depth {
                 symbol,
                 levels,
                 interval_ms,
             } => match (levels, interval_ms) {
-                (Some(l), Some(i)) => format!("{}@depth{l}@{i}ms", symbol.as_ref().to_lowercase()),
-                (Some(l), None) => format!("{}@depth{l}", symbol.as_ref().to_lowercase()),
-                (None, Some(i)) => format!("{}@depth@{i}ms", symbol.as_ref().to_lowercase()),
-                (None, None) => format!("{}@depth", symbol.as_ref().to_lowercase()),
+                (Some(l), Some(i)) => format!("{}@depth{l}@{i}ms", symbol.as_str_lowercase()),
+                (Some(l), None) => format!("{}@depth{l}", symbol.as_str_lowercase()),
+                (None, Some(i)) => format!("{}@depth@{i}ms", symbol.as_str_lowercase()),
+                (None, None) => format!("{}@depth", symbol.as_str_lowercase()),
             },
-            AggTrade { symbol } => format!("{}@aggTrade", symbol.as_ref().to_lowercase()),
-            Trade { symbol } => format!("{}@trade", symbol.as_ref().to_lowercase()),
-            TradeLite => "TRADE_LITE".to_string(),
-            OrderTradeUpdate => "ORDER_TRADE_UPDATE".to_string(),
-            AccountUpdate => "ACCOUNT_UPDATE".to_string(),
+            S::BookTicker { symbol } => format!("{}@bookTicker", symbol.as_str_lowercase()),
+            S::AggTrade { symbol } => format!("{}@aggTrade", symbol.as_str_lowercase()),
+            S::Trade { symbol } => format!("{}@trade", symbol.as_str_lowercase()),
+            S::TradeLite => "TRADE_LITE".to_string(),
+            S::OrderTradeUpdate => "ORDER_TRADE_UPDATE".to_string(),
+            S::AccountUpdate => "ACCOUNT_UPDATE".to_string(),
         }
     }
 }
@@ -116,6 +119,7 @@ pub trait ParseStream: Sized {
 #[derive(Debug)]
 pub enum MarketStream {
     Depth(Depth),
+    BookTicker(BookTicker),
     AggTrade(AggTrade),
     Trade(Trade),
     Raw(Utf8Bytes),
@@ -125,6 +129,7 @@ impl ParseStream for MarketStream {
     fn parse(text: &str) -> Self {
         match serde_json::from_str::<MarketPayload>(text) {
             Ok(MarketPayload::Depth(depth)) => MarketStream::Depth(depth),
+            Ok(MarketPayload::BookTicker(book_ticker)) => MarketStream::BookTicker(book_ticker),
             Ok(MarketPayload::AggTrade(agg_trade)) => MarketStream::AggTrade(agg_trade),
             Ok(MarketPayload::Trade(trade)) => MarketStream::Trade(trade),
             Err(_) => {
@@ -147,9 +152,7 @@ pub enum AccountStream {
 impl ParseStream for AccountStream {
     fn parse(text: &str) -> Self {
         match serde_json::from_str::<AccountPayload>(text) {
-            Ok(AccountPayload::OrderTradeUpdate(order_trade_update)) => {
-                AccountStream::OrderTradeUpdate(order_trade_update)
-            }
+            Ok(AccountPayload::OrderTradeUpdate(update)) => AccountStream::OrderTradeUpdate(update),
             Ok(AccountPayload::TradeLite(trade_lite)) => AccountStream::TradeLite(trade_lite),
             Ok(AccountPayload::AccountUpdate(account_update)) => {
                 AccountStream::AccountUpdate(account_update)
@@ -168,6 +171,8 @@ impl ParseStream for AccountStream {
 enum MarketPayload {
     #[serde(rename = "depthUpdate")]
     Depth(Depth),
+    #[serde(rename = "bookTicker")]
+    BookTicker(BookTicker),
     #[serde(rename = "trade")]
     Trade(Trade),
     #[serde(rename = "aggTrade")]
@@ -236,8 +241,8 @@ impl<E> WsSession<E>
 where
     E: ParseStream + 'static + Send + Sync + fmt::Debug,
 {
-    pub fn spawn(self) -> JoinHandle<()> {
-        tokio::spawn(async move {
+    fn task(self) -> impl Future<Output = ()> + Send + 'static {
+        async move {
             let mut session = self;
             let Ok((ws_stream, _)) =
                 connect_async_with_config(session.endpoint.as_str(), Some(session.config), true)
@@ -263,6 +268,7 @@ where
                                 let timed = Timed { event, recv_instant, recv_utc, parse_duration };
                                 let _ = session.evt_tx.send(timed).await;
                             }
+                            Some(Ok(Message::Ping(_))) => {}
                             Some(Ok(raw)) => {
                                 let msg_type = match &raw {
                                     Message::Text(_) => "text",
@@ -283,11 +289,12 @@ where
                     }
                     // if a command sent
                     maybe_cmd = session.cmd_rx.recv() => {
+                        use WsSubscriptionMethod as M;
                         match maybe_cmd {
                             Some(StreamCommand::Subscribe(specs)) => {
                                 let params: Vec<String> = specs.iter().map(StreamSpec::as_param).collect();
                                 session.active.extend(specs);
-                                let cmd = WsSubscriptionCommand::new("SUBSCRIBE", params, session.next_id);
+                                let cmd = WsSubscriptionCommand::new(M::Subscribe, params, session.next_id);
                                 session.next_id += 1;
                                 let _ = ws_sink.send(Message::Text(cmd.to_string().into())).await;
                             }
@@ -296,7 +303,7 @@ where
                                     session.active.remove(spec);
                                 }
                                 let params: Vec<String> = specs.iter().map(StreamSpec::as_param).collect();
-                                let cmd = WsSubscriptionCommand::new("UNSUBSCRIBE", params, session.next_id);
+                                let cmd = WsSubscriptionCommand::new(M::Unsubscribe, params, session.next_id);
                                 session.next_id += 1;
                                 let _ = ws_sink.send(Message::Text(cmd.to_string().into())).await;
                             }
@@ -306,6 +313,17 @@ where
                     }
                 }
             }
-        })
+        }
+    }
+
+    pub fn spawn(self) -> JoinHandle<()> {
+        tokio::spawn(self.task())
+    }
+
+    pub fn spawn_named(self, name: &'static str) -> JoinHandle<()> {
+        tokio::task::Builder::new()
+            .name(name)
+            .spawn(self.task())
+            .unwrap_or_else(|_| panic!("Failed to spawn task {}", name))
     }
 }

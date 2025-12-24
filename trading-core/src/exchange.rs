@@ -1,8 +1,8 @@
 use crate::error::{ApiError, MessageCodecError, Result, TradingCoreError};
+use crate::models::Order;
 use chrono::Utc;
 use data::{
     DataError,
-    binance::request::RequestOpen,
     binance::response::OrderSuccessResp,
     config::AccountConfidential,
     order::{Symbol, TimeInForce},
@@ -11,19 +11,12 @@ use hmac::{Hmac, Mac};
 use reqwest::{self, Response, StatusCode};
 use serde_json::Value;
 use sha2::Sha256;
-use std::path::Path;
 use uuid::Uuid;
-
-pub const TEST_ENDPOINT_REST: &'static str = "https://demo-fapi.binance.com";
-pub const ENDPOINT_REST: &'static str = "https://fapi.binance.com";
 
 #[derive(Debug)]
 pub struct Client {
-    symbol: Symbol,
     pub api_key: String,
     api_secret: String,
-    #[allow(dead_code)]
-    is_testnet: bool,
     http_client: reqwest::Client,
     endpoint: String,
 }
@@ -37,32 +30,23 @@ fn map_api_error(status: StatusCode, body: String) -> ApiError {
 }
 
 impl Client {
-    pub fn new(
-        name: &str,
-        csv_path: impl AsRef<Path>,
-        symbol: Symbol,
+    pub fn from_config(
+        cfg: &data::config::DataCenterConfig,
         http_client: reqwest::Client,
     ) -> Result<Self> {
-        let confidential = AccountConfidential::from_csv(name, csv_path)?;
-        let client = match confidential.is_testnet() {
-            true => Self {
-                symbol,
-                api_key: confidential.api_key,
-                api_secret: confidential.api_secret,
-                is_testnet: true,
-                http_client,
-                endpoint: String::from(TEST_ENDPOINT_REST),
-            },
-            false => Self {
-                symbol,
-                api_key: confidential.api_key,
-                api_secret: confidential.api_secret,
-                is_testnet: false,
-                http_client,
-                endpoint: String::from(ENDPOINT_REST),
-            },
+        let confidential = AccountConfidential::from_csv(&cfg.account.name, &cfg.account.csv_path)?;
+
+        let endpoint = match cfg.account.environment {
+            data::config::Environment::Production => cfg.exchange.rest.endpoints.production.clone(),
+            data::config::Environment::Testnet => cfg.exchange.rest.endpoints.testnet.clone(),
         };
-        Ok(client)
+
+        Ok(Self {
+            api_key: confidential.api_key,
+            api_secret: confidential.api_secret,
+            http_client,
+            endpoint,
+        })
     }
 
     fn now_u64() -> u64 {
@@ -158,7 +142,31 @@ impl Client {
         Ok(listen_key)
     }
 
-    pub async fn open_order(&self, request: RequestOpen) -> Result<OrderSuccessResp> {
+    pub async fn get_open_orders(&self, symbol: Option<Symbol>) -> Result<Vec<OrderSuccessResp>> {
+        let mut query_string = format!("timestamp={}", Self::now_u64());
+        if let Some(symbol) = symbol {
+            query_string.push_str(&format!("&symbol={}", symbol));
+        }
+        let signed_request = self.sign("")?;
+        let response = self
+            .signed_put("/fapi/v1/openOrders", signed_request)
+            .await?;
+
+        let status = response.status();
+        let body = response.text().await?;
+
+        if !status.is_success() {
+            let api_err = map_api_error(status, body);
+            return Err(TradingCoreError::from(api_err));
+        }
+
+        let orders: Vec<OrderSuccessResp> = serde_json::from_str(&body)?;
+
+        Ok(orders)
+    }
+
+    pub async fn open_order(&self, request: Order) -> Result<OrderSuccessResp> {
+        // TODO: remove this check
         match (request.time_in_force(), request.good_till_date()) {
             (TimeInForce::GoodUntilDate, Some(_)) => {}
             (TimeInForce::GoodUntilDate, None) | (_, Some(_)) => {
@@ -172,11 +180,11 @@ impl Client {
 
         // TODO: use copy? maybe benchmark first
         let mut query_string =
-            serde_urlencoded::to_string(&request).map_err(MessageCodecError::from)?;
+            serde_urlencoded::to_string(request).map_err(MessageCodecError::from)?;
 
         // add timestamp & symbol & clienOrderId
         let ts = Self::now_u64();
-        query_string.push_str(&format!("&symbol={}&timestamp={}", self.symbol, ts));
+        query_string.push_str(&format!("&timestamp={}", ts));
 
         let signed_request = self.sign(&query_string)?;
         let response = self.signed_post("/fapi/v1/order", signed_request).await?;
@@ -192,10 +200,16 @@ impl Client {
         Ok(success)
     }
 
-    pub async fn cancel_order(&self, client_id: Uuid) -> Result<OrderSuccessResp> {
+    pub async fn open_orders(&self, requests: &[Order]) -> Vec<Result<OrderSuccessResp>> {
+        use futures_util::future::join_all;
+        // TODO: the slowest order will block
+        join_all(requests.iter().copied().map(|req| self.open_order(req))).await
+    }
+
+    pub async fn cancel_order(&self, symbol: Symbol, client_id: Uuid) -> Result<OrderSuccessResp> {
         let query_string = format!(
             "symbol={}&origClientOrderId={}&timestamp={}",
-            self.symbol,
+            symbol,
             client_id,
             Self::now_u64()
         );
@@ -203,6 +217,7 @@ impl Client {
         let response = self.signed_delete("/fapi/v1/order", signed_request).await?;
         let status = response.status();
         let body = response.text().await?;
+
         if !status.is_success() {
             let api_err = map_api_error(status, body);
             return Err(TradingCoreError::from(api_err));
@@ -219,29 +234,27 @@ mod tests {
     use chrono::{Duration, Utc};
     use data::{
         binance::response::OrderSuccessResp,
-        order::{OrderKind, OrderStatus, Side, TimeInForce},
+        config::DataCenterConfig,
+        order::{OrderKind, OrderStatus, Side, Symbol::BNBUSDT, TimeInForce},
     };
-    use rust_decimal::dec;
+    use rust_decimal::{Decimal, dec};
 
     fn make_client() -> Client {
-        Client::new(
-            "test",
-            "../test/test_account_info.csv",
-            "BNBUSDT".parse().unwrap(),
-            reqwest::Client::new(),
-        )
-        .expect("Failed to create client")
+        let cfg_path = std::env::var("CERAUNUS_CONFIG")
+            .unwrap_or_else(|_| "../config/datacenter-config.toml".to_string());
+        let cfg = DataCenterConfig::load(&cfg_path).expect("Failed to load config");
+        Client::from_config(&cfg, reqwest::Client::new()).expect("Failed to create client")
     }
 
-    fn make_open_request() -> RequestOpen {
+    fn make_order() -> Order {
         let gtd = Utc::now() + Duration::minutes(20);
         let gtd = (gtd.timestamp() * 1000) as u64;
-        RequestOpen::new(
+        Order::new(
+            BNBUSDT,
             Side::Buy,
-            dec!(69),
-            dec!(1.0),
             OrderKind::Limit,
-            Uuid::new_v4(),
+            dec!(69),
+            Decimal::ONE,
             TimeInForce::GoodUntilDate,
             Some(gtd),
         )
@@ -261,7 +274,7 @@ mod tests {
 
     #[tokio::test()]
     async fn test_open_order() {
-        let order_request = make_open_request();
+        let order_request = make_order();
         let client = make_client();
 
         let success: OrderSuccessResp = client
@@ -274,7 +287,7 @@ mod tests {
 
     #[tokio::test()]
     async fn test_cancel_order() {
-        let order_request = make_open_request();
+        let order_request = make_order();
         let client = make_client();
         let client_order_id = order_request.client_order_id();
 
@@ -284,7 +297,7 @@ mod tests {
             .expect("Failed to open order");
 
         let cancel_success = client
-            .cancel_order(client_order_id)
+            .cancel_order(BNBUSDT, client_order_id)
             .await
             .expect("Failed to cancel order");
 

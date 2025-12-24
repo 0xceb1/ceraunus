@@ -1,12 +1,11 @@
 use chrono::{DateTime, Utc};
 use data::binance::account::OrderTradeUpdateEvent;
-use data::binance::market::Depth;
-use data::binance::request::RequestOpen;
+use data::binance::market::{Depth, Level};
 use data::order::*;
 use derive_getters::Getters;
 use reqwest::Client;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::{self, Formatter};
 use tracing::warn;
@@ -14,24 +13,40 @@ use uuid::Uuid;
 
 use crate::error::Result as TradingCoreResult;
 
+type BboPair = (Level, Level); // (bid_level, ask_level)
+
 /// Local record for an order
-#[derive(Debug, Clone, Copy, Getters)]
+#[derive(Debug, Clone, Copy, Serialize, Getters)]
 pub struct Order {
     symbol: Symbol,
     side: Side,
+    #[getter(copy)]
+    #[serde(skip)]
     start_ts: DateTime<Utc>,
+    #[serde(skip_serializing)]
     order_id: Option<u64>,
+    #[serde(rename = "newClientOrderId")]
     #[getter(copy)]
     client_order_id: Uuid,
+    #[serde(skip_serializing)]
+    #[getter(copy)]
     last_update_ts: DateTime<Utc>,
 
+    #[serde(rename = "type")]
     kind: OrderKind, // a limit order can be transformed into market order due to price drift
+    #[serde(skip_serializing)]
     curr_price: Decimal,
+    #[serde(skip_serializing)]
     curr_qty: Decimal,
+    #[serde(rename = "price")]
     orig_price: Decimal,
+    #[serde(rename = "quantity")]
     orig_qty: Decimal,
+    #[serde(rename = "timeInForce")]
     time_in_force: TimeInForce,
+    #[serde(rename = "goodTillDate", skip_serializing_if = "Option::is_none")]
     good_till_date: Option<u64>,
+    #[serde(skip_serializing)]
     status: Option<OrderStatus>,
 }
 
@@ -62,18 +77,6 @@ impl Order {
             good_till_date,
             status: None,
         }
-    }
-
-    pub fn to_request(&self) -> RequestOpen {
-        RequestOpen::new(
-            self.side,
-            self.orig_price,
-            self.orig_qty,
-            self.kind,
-            self.client_order_id,
-            self.time_in_force,
-            self.good_till_date,
-        )
     }
 
     pub fn on_update_received(&mut self, update_event: &OrderTradeUpdateEvent) {
@@ -142,13 +145,32 @@ impl OrderBook {
         })
     }
 
+    pub fn show(&self, depth: usize) -> String {
+        //TODO: benchmark the perf
+        format!(
+            "[B:{}|A:{}]",
+            self.bids
+                .iter()
+                .rev()
+                .take(depth)
+                .map(|(p, q)| format!("{}@{}", q, p))
+                .collect::<Vec<_>>()
+                .join(","),
+            self.asks
+                .iter()
+                .take(depth)
+                .map(|(p, q)| format!("{}@{}", q, p))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    }
+
     pub fn extend(&mut self, depth: Depth) {
         // WARN: This is a dumb method, please check the last_update_id by yourself
         self.xchg_ts = depth.transaction_time();
         self.local_ts = Utc::now();
         self.last_update_id = depth.final_update_id();
 
-        // TODO: more elegant way?
         for level in depth.bids() {
             if level.quantity.is_zero() {
                 self.bids.remove(&level.price);
@@ -164,6 +186,12 @@ impl OrderBook {
                 self.asks.insert(level.price, level.quantity);
             }
         }
+    }
+
+    pub fn get_bbo(&self) -> Option<BboPair> {
+        let (bp, bq) = self.bids.last_key_value()?;
+        let (ap, aq) = self.asks.first_key_value()?;
+        Some((Level::from((bp, bq)), Level::from((ap, aq))))
     }
 }
 
@@ -203,4 +231,96 @@ where
     let mut side = BTreeMap::new();
     side.extend(raw); // O(N*log(N))
     Ok(side)
+}
+
+/// PnL per symbol
+#[derive(Debug, Clone, Copy, Getters)]
+pub struct ProfitAndLoss {
+    #[getter(copy)]
+    execution_pnl: Decimal, // WARN: in USDT, Commission??
+    #[getter(copy)]
+    unrealized_pnl: Decimal,
+    #[getter(copy)]
+    realized_pnl: Decimal,
+    avg_entry_price: Decimal,
+    #[getter(copy)]
+    position: Decimal, // as of qty
+    buy_qty: Decimal,
+    sell_qty: Decimal,
+    #[getter(copy)]
+    buy_amount: Decimal,
+    #[getter(copy)]
+    sell_amount: Decimal,
+}
+
+impl ProfitAndLoss {
+    pub fn new(init_price: Decimal, init_pos: Decimal) -> Self {
+        const ZERO: Decimal = Decimal::ZERO;
+        Self {
+            execution_pnl: ZERO,
+            unrealized_pnl: ZERO,
+            realized_pnl: ZERO,
+            avg_entry_price: init_price,
+            position: init_pos,
+            buy_qty: ZERO,
+            sell_qty: ZERO,
+            buy_amount: ZERO,
+            sell_amount: ZERO,
+        }
+    }
+
+    pub fn on_update_received(&mut self, update_event: &OrderTradeUpdateEvent) {
+        // TODO: benchmark the time usage
+        // This method should only be called when trade event received
+        self.execution_pnl -= update_event.commission();
+        let price = update_event.last_filled_price();
+        let qty = update_event.last_filled_qty();
+        let amount = update_event.last_filled_amount();
+
+        match update_event.side() {
+            // handle realized pnl & position
+            Side::Buy => self.handle_buy(price, qty, amount),
+            Side::Sell => self.handle_sell(price, qty, amount),
+        }
+
+        // update unrealized pnl
+        self.unrealized_pnl = (price - self.avg_entry_price) * self.position;
+    }
+
+    fn handle_buy(&mut self, price: Decimal, qty: Decimal, amount: Decimal) {
+        let old_pos = self.position;
+        self.position += qty;
+        self.buy_qty += qty;
+        self.buy_amount += amount;
+        if old_pos >= Decimal::ZERO {
+            let total_cost = self.avg_entry_price * old_pos + amount;
+            self.avg_entry_price = total_cost / self.position;
+        } else {
+            if qty <= -old_pos {
+                self.realized_pnl += (self.avg_entry_price - price) * qty;
+            } else {
+                self.realized_pnl += (price - self.avg_entry_price) * old_pos;
+                self.avg_entry_price = price;
+            }
+        }
+    }
+
+    fn handle_sell(&mut self, price: Decimal, qty: Decimal, amount: Decimal) {
+        let old_pos = self.position;
+        self.position -= qty;
+        self.sell_qty += qty;
+        self.sell_amount += amount;
+
+        if old_pos <= Decimal::ZERO {
+            let total_cost = amount - self.avg_entry_price * self.position;
+            self.avg_entry_price = -total_cost / old_pos;
+        } else {
+            if qty <= old_pos {
+                self.realized_pnl += (price - self.avg_entry_price) * qty;
+            } else {
+                self.realized_pnl += (price - self.avg_entry_price) * old_pos;
+                self.avg_entry_price = price;
+            }
+        }
+    }
 }

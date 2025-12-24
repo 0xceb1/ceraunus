@@ -5,6 +5,7 @@ members = ["ceraunus", "data", "trading-core"]
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+toml = "0.9"
 tokio = { version = "1.48", features = ["full"] }
 tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
 reqwest = { version = "0.12" }
@@ -18,15 +19,15 @@ tracing-appender = { version = "0.2" }
 anyhow = { version = "1.0" }
 thiserror = { version = "2.0" }
 
-indexmap = {version = "2.12"}
+enum-map = { version = "2.7" }
+rustc-hash = { version = "2.1" }
+smallvec = { version = "1.15", features = ["serde"] }
 rust_decimal = { version = "1.39", features = ["macros", "serde"] }
 uuid = { version = "1.19", features = ["v4"] }
 chrono = { version = "0.4" }
 
 derive_more = { version = "2.1", features = ["full"] }
-derive-getters = { version = "0.5.0", features = ["auto_copy_getters"]}
-strum = "0.27"
-strum_macros = "0.27"
+derive-getters = { version = "0.5.0", features = ["auto_copy_getters"] }
 
 openssl = { version = "0.10", features = [
     "vendored",
@@ -34,3 +35,9 @@ openssl = { version = "0.10", features = [
 criterion = { version = "0.8", default-features = false, features = [
     "cargo_bench_support",
 ] }
+
+[profile.release]
+debug = false
+lto = false
+codegen-units = 1
+panic = "abort"
