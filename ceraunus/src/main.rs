@@ -166,7 +166,6 @@ async fn main() -> Result<()> {
 
     let mut state: State = State::new();
 
-    let mut depth_counter: u64 = 0;
     let mut depth_buffer: Vec<Depth> = Vec::with_capacity(8);
     let mut snapshot_fut = snapshot_task(
         SOLUSDT,
@@ -275,8 +274,6 @@ async fn main() -> Result<()> {
                             .signed_duration_since(depth.event_time())
                             .num_milliseconds();
 
-                        depth_counter += 1;
-
                         if let Some(ob) = state.order_books[SOLUSDT].as_mut() {
                             if (depth.last_final_update_id()..=depth.final_update_id())
                                 .contains(&ob.last_update_id())
@@ -299,15 +296,6 @@ async fn main() -> Result<()> {
                                         bbo = ?state.bbo_levels[SOLUSDT],
                                         "Orderbook and BBO level do not match"
                                     )
-                                }
-
-                                if depth_counter % 100 == 0 {
-                                    info!(
-                                        last_update_id = %ob.last_update_id(),
-                                        bids = %ob.bids().len(),
-                                        asks = %ob.asks().len(),
-                                        "Order book depth checkpoint"
-                                    );
                                 }
                             } else {
                                 warn!(
