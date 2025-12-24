@@ -182,6 +182,7 @@ pub struct OrderTradeUpdate {
 
     #[serde(rename = "n")]
     #[getter(copy)]
+    // WARN: in USDT
     commission: Decimal,
 
     #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]

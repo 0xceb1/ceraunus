@@ -200,7 +200,7 @@ async fn main() -> Result<()> {
         match event {
             Event::Account(acct_event) => match acct_event {
                 AccountStream::OrderTradeUpdate(update_event) => {
-                    if let Err(err) = state.on_update_received(update_event) {
+                    if let Err(err) = state.on_update_received(&update_event) {
                         error!(
                             %err,
                             symbol = %update_event.symbol(),
@@ -238,7 +238,7 @@ async fn main() -> Result<()> {
                                     bbo = ?state.bbo_levels[SOLUSDT],
                                     "Orderbook and BBO level do not match"
                                 )
-                            } 
+                            }
                         } else {
                             warn!(
                                 last_final_update_id = %depth.last_final_update_id(),
@@ -264,7 +264,6 @@ async fn main() -> Result<()> {
                 MarketStream::BookTicker(book_ticker) => {
                     state.on_book_ticker_received(book_ticker);
                 }
-                // TODO: we still construct the events even if they are immediately dropped
                 MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::Raw(_) => {}
             },
 
@@ -326,7 +325,7 @@ async fn main() -> Result<()> {
                             Err(err) => {
                                 // TODO: complete the order
                                 warn!(%err, "Open order failed");
-                            },
+                            }
                         }
                     }
                 });
@@ -337,6 +336,9 @@ async fn main() -> Result<()> {
                     elapsed = %(Utc::now() - state.start_time()),
                     turnover = %state.turnover(),
                     curr_pos = %state.get_position(SOLUSDT),
+                    exec_pnl = %state.pnls[SOLUSDT].execution_pnl(),
+                    unrealized_pnl = %state.pnls[SOLUSDT].unrealized_pnl(),
+                    realized_pnl = %state.pnls[SOLUSDT].realized_pnl(),
                     ob = ?state.order_books[SOLUSDT].as_ref().map(|ob| ob.show(5)),
                     "Trading Summary"
                 );

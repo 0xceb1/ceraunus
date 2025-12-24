@@ -192,7 +192,7 @@ impl OrderBook {
         let (bp, bq) = self.bids.last_key_value()?;
         let (ap, aq) = self.asks.first_key_value()?;
         Some((Level::from((bp, bq)), Level::from((ap, aq))))
-    } 
+    }
 }
 
 impl fmt::Display for OrderBook {
@@ -231,4 +231,96 @@ where
     let mut side = BTreeMap::new();
     side.extend(raw); // O(N*log(N))
     Ok(side)
+}
+
+/// PnL per symbol
+#[derive(Debug, Clone, Copy, Getters)]
+pub struct ProfitAndLoss {
+    #[getter(copy)]
+    execution_pnl: Decimal, // WARN: in USDT, Commission??
+    #[getter(copy)]
+    unrealized_pnl: Decimal,
+    #[getter(copy)]
+    realized_pnl: Decimal,
+    avg_entry_price: Decimal,
+    #[getter(copy)]
+    position: Decimal, // as of qty
+    buy_qty: Decimal,
+    sell_qty: Decimal,
+    #[getter(copy)]
+    buy_amount: Decimal,
+    #[getter(copy)]
+    sell_amount: Decimal,
+}
+
+impl ProfitAndLoss {
+    pub fn new(init_price: Decimal, init_pos: Decimal) -> Self {
+        const ZERO: Decimal = Decimal::ZERO;
+        Self {
+            execution_pnl: ZERO,
+            unrealized_pnl: ZERO,
+            realized_pnl: ZERO,
+            avg_entry_price: init_price,
+            position: init_pos,
+            buy_qty: ZERO,
+            sell_qty: ZERO,
+            buy_amount: ZERO,
+            sell_amount: ZERO,
+        }
+    }
+
+    pub fn on_update_received(&mut self, update_event: &OrderTradeUpdateEvent) {
+        // TODO: benchmark the time usage
+        // This method should only be called when trade event received
+        self.execution_pnl += update_event.commission();
+        let price = update_event.last_filled_price();
+        let qty = update_event.last_filled_qty();
+        let amount = update_event.last_filled_amount();
+
+        match update_event.side() {
+            // handle realized pnl & position
+            Side::Buy => self.handle_buy(price, qty, amount),
+            Side::Sell => self.handle_sell(price, qty, amount),
+        }
+
+        // update unrealized pnl
+        self.unrealized_pnl = (price - self.avg_entry_price) * self.position;
+    }
+
+    fn handle_buy(&mut self, price: Decimal, qty: Decimal, amount: Decimal) {
+        let old_pos = self.position;
+        self.position += qty;
+        self.buy_qty += qty;
+        self.buy_amount += amount;
+        if old_pos >= Decimal::ZERO {
+            let total_cost = self.avg_entry_price * old_pos + amount;
+            self.avg_entry_price = total_cost / self.position;
+        } else {
+            if qty <= -old_pos {
+                self.realized_pnl += (self.avg_entry_price - price) * qty;
+            } else {
+                self.realized_pnl += (price - self.avg_entry_price) * old_pos;
+                self.avg_entry_price = price;
+            }
+        }
+    }
+
+    fn handle_sell(&mut self, price: Decimal, qty: Decimal, amount: Decimal) {
+        let old_pos = self.position;
+        self.position -= qty;
+        self.sell_qty += qty;
+        self.sell_amount += amount;
+
+        if old_pos <= Decimal::ZERO {
+            let total_cost = amount - self.avg_entry_price * self.position;
+            self.avg_entry_price = -total_cost / old_pos;
+        } else {
+            if qty <= old_pos {
+                self.realized_pnl += (price - self.avg_entry_price) * qty;
+            } else {
+                self.realized_pnl += (price - self.avg_entry_price) * old_pos;
+                self.avg_entry_price = price;
+            }
+        }
+    }
 }

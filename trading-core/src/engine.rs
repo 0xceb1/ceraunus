@@ -42,12 +42,12 @@ pub struct State {
     // orders filled/cancelled/failed to sent (life ended)
     hist_orders: FxHashSet<Uuid>,
 
-    // current net position in quantity
-    position: EnumMap<Symbol, Decimal>,
+    pub pnls: EnumMap<Symbol, ProfitAndLoss>,
 
     start_time: DateTime<Utc>,
 
     // total traded amount in USDT
+    // TODO: deprecate in the future
     turnover: Decimal,
 }
 
@@ -58,7 +58,8 @@ impl State {
             order_books: EnumMap::from_fn(|_| None),
             active_orders: FxHashMap::with_capacity_and_hasher(128, FxBuildHasher),
             hist_orders: FxHashSet::with_capacity_and_hasher(1024, FxBuildHasher),
-            position: EnumMap::default(),
+            // TODO: construct from init pos
+            pnls: EnumMap::from_fn(|_| ProfitAndLoss::new(Decimal::ZERO, Decimal::ZERO)),
             start_time: Utc::now(),
             turnover: Decimal::ZERO,
         }
@@ -72,8 +73,9 @@ impl State {
         self.turnover
     }
 
+    #[inline]
     pub fn get_position(&self, symbol: Symbol) -> Decimal {
-        self.position[symbol]
+        self.pnls[symbol].position()
     }
 
     // Order book management
@@ -128,21 +130,22 @@ impl State {
 
     pub fn on_update_received(
         &mut self,
-        update_event: OrderTradeUpdateEvent,
+        update_event: &OrderTradeUpdateEvent,
     ) -> TradingCoreResult<()> {
+        use TradingCoreError as Err;
         use data::binance::account::ExecutionType as E;
         let client_id = update_event.client_order_id();
 
         let order = self.active_orders.get_mut(&client_id).ok_or_else(|| {
             // TODO: more robust
             if self.hist_orders.contains(&client_id) {
-                TradingCoreError::Unknown(format!("Order has been removed {}", client_id))
+                Err::Unknown(format!("Order has been removed {}", client_id))
             } else {
-                TradingCoreError::Unknown(format!("Untracked order {}", client_id))
+                Err::Unknown(format!("Untracked order {}", client_id))
             }
         })?;
 
-        order.on_update_received(&update_event);
+        order.on_update_received(update_event);
         match update_event.exec_type() {
             reason @ (E::Canceled | E::Calculated | E::Expired) => {
                 debug!(%client_id, %reason, "Order removed");
@@ -150,11 +153,7 @@ impl State {
             }
             E::Trade => {
                 let symbol = update_event.symbol();
-                let qty = update_event.last_filled_qty();
-                match update_event.side() {
-                    Side::Buy => self.position[symbol] += qty,
-                    Side::Sell => self.position[symbol] -= qty,
-                }
+                self.pnls[symbol].on_update_received(update_event);
                 self.turnover += update_event.last_filled_amount();
                 if update_event.order_status() == OrderStatus::Filled {
                     debug!(%client_id, reason="TRADE", "Order removed");
