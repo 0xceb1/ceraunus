@@ -272,7 +272,7 @@ impl ProfitAndLoss {
     pub fn on_update_received(&mut self, update_event: &OrderTradeUpdateEvent) {
         // TODO: benchmark the time usage
         // This method should only be called when trade event received
-        self.execution_pnl += update_event.commission();
+        self.execution_pnl -= update_event.commission();
         let price = update_event.last_filled_price();
         let qty = update_event.last_filled_qty();
         let amount = update_event.last_filled_amount();
