@@ -35,11 +35,15 @@ const STALE_ORDER_THRESHOLD: chrono::Duration = chrono::Duration::seconds(30);
 
 #[derive(Debug)]
 enum Event {
+    // websocket
     Account(AccountStream),
     Market(MarketStream),
+    // orderbook
     SnapshotDone(ClientResult<OrderBook>),
+    // open order
     SendOrderTick,
     CancelOrderTick,
+
     ReportStateTick,
     KeepaliveTick,
 }
@@ -162,7 +166,7 @@ async fn main() -> Result<()> {
 
     info!("----------INITILIAZATION FINISHED----------");
 
-    let mut state: State = State::new();
+    let mut state: State = State::new(SOLUSDT);
 
     let mut depth_buffer: Vec<Depth> = Vec::with_capacity(8);
     let mut snapshot_fut = snapshot_task(
@@ -188,11 +192,11 @@ async fn main() -> Result<()> {
 
             _ = report_state_interval.tick() => Event::ReportStateTick,
 
-            _ = send_order_interval.tick(), if state.has_order_book(SOLUSDT) => Event::SendOrderTick,
+            _ = send_order_interval.tick(), if state.has_order_book() => Event::SendOrderTick,
 
             _ = cancel_order_interval.tick() => Event::CancelOrderTick,
 
-            snapshot_res = &mut snapshot_fut, if !state.has_order_book(SOLUSDT) => Event::SnapshotDone(snapshot_res),
+            snapshot_res = &mut snapshot_fut, if !state.has_order_book() => Event::SnapshotDone(snapshot_res),
 
             _ = keepalive_interval.tick() => Event::KeepaliveTick,
         };
@@ -226,16 +230,16 @@ async fn main() -> Result<()> {
 
             Event::Market(event) => match event {
                 MarketStream::Depth(depth) => {
-                    if let Some(ob) = &mut state.order_books[SOLUSDT] {
+                    if let Some(ob) = &mut state.order_book {
                         if (depth.last_final_update_id()..=depth.final_update_id())
                             .contains(&ob.last_update_id())
                         {
                             // TODO: recheck the gap-detection logic here
                             ob.extend(depth);
-                            if ob.get_bbo() != state.bbo_levels[SOLUSDT] {
+                            if ob.get_bbo() != state.bbo_level {
                                 warn!(
                                     ob_bbo = ?ob.get_bbo(),
-                                    bbo = ?state.bbo_levels[SOLUSDT],
+                                    bbo = ?state.bbo_level,
                                     "Orderbook and BBO level do not match"
                                 )
                             }
@@ -246,7 +250,7 @@ async fn main() -> Result<()> {
                                 final_update_id = %depth.final_update_id(),
                                 "Gap detected in depth updates"
                             );
-                            state.remove_order_book(SOLUSDT);
+                            state.remove_order_book();
                             snapshot_fut = snapshot_task(
                                 SOLUSDT,
                                 http.clone(),
@@ -279,7 +283,7 @@ async fn main() -> Result<()> {
                     }
                 }
                 info!(last_update_id=%ob.last_update_id(), "Order book ready");
-                state.order_books[SOLUSDT] = Some(ob);
+                state.order_book = Some(ob);
             }
 
             Event::CancelOrderTick => {
@@ -335,11 +339,11 @@ async fn main() -> Result<()> {
                 info!(
                     elapsed = %(Utc::now() - state.start_time()),
                     turnover = %state.turnover(),
-                    curr_pos = %state.get_position(SOLUSDT),
-                    exec_pnl = %state.pnls[SOLUSDT].execution_pnl(),
-                    unrealized_pnl = %state.pnls[SOLUSDT].unrealized_pnl(),
-                    realized_pnl = %state.pnls[SOLUSDT].realized_pnl(),
-                    ob = ?state.order_books[SOLUSDT].as_ref().map(|ob| ob.show(5)),
+                    curr_pos = %state.get_position(),
+                    exec_pnl = %state.pnl.execution_pnl(),
+                    unrealized_pnl = %state.pnl.unrealized_pnl(),
+                    realized_pnl = %state.pnl.realized_pnl(),
+                    ob = ?state.order_book.as_ref().map(|ob| ob.show(5)),
                     "Trading Summary"
                 );
             }

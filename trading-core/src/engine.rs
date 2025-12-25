@@ -1,5 +1,4 @@
 use chrono::{DateTime, Duration, Utc};
-use enum_map::EnumMap;
 use rust_decimal::Decimal;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use uuid::Uuid;
@@ -17,22 +16,17 @@ use data::{
 };
 use tracing::debug;
 
-#[allow(dead_code)]
-trait Processor<E> {
-    type Output;
-    fn process(&mut self, event: E) -> Self::Output;
-}
-
 type BboPair = (Level, Level);
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct State {
+    pub symbol: Symbol,
+
     // best-available ask & bid
-    pub bbo_levels: EnumMap<Symbol, Option<BboPair>>, // (bid_level, ask_level)
+    pub bbo_level: Option<BboPair>, // (bid_level, ask_level)
 
     // local order book
-    pub order_books: EnumMap<Symbol, Option<OrderBook>>,
+    pub order_book: Option<OrderBook>,
 
     // orders that may still receive updates
     active_orders: FxHashMap<Uuid, Order>,
@@ -42,7 +36,7 @@ pub struct State {
     // orders filled/cancelled/failed to sent (life ended)
     hist_orders: FxHashSet<Uuid>,
 
-    pub pnls: EnumMap<Symbol, ProfitAndLoss>,
+    pub pnl: ProfitAndLoss,
 
     start_time: DateTime<Utc>,
 
@@ -52,14 +46,15 @@ pub struct State {
 }
 
 impl State {
-    pub fn new() -> Self {
+    pub fn new(symbol: Symbol) -> Self {
         Self {
-            bbo_levels: EnumMap::from_fn(|_| None),
-            order_books: EnumMap::from_fn(|_| None),
+            symbol,
+            bbo_level: None,
+            order_book: None,
             active_orders: FxHashMap::with_capacity_and_hasher(128, FxBuildHasher),
             hist_orders: FxHashSet::with_capacity_and_hasher(1024, FxBuildHasher),
             // TODO: construct from init pos
-            pnls: EnumMap::from_fn(|_| ProfitAndLoss::new(Decimal::ZERO, Decimal::ZERO)),
+            pnl: ProfitAndLoss::new(Decimal::ZERO, Decimal::ZERO),
             start_time: Utc::now(),
             turnover: Decimal::ZERO,
         }
@@ -73,18 +68,17 @@ impl State {
         self.turnover
     }
 
-    #[inline]
-    pub fn get_position(&self, symbol: Symbol) -> Decimal {
-        self.pnls[symbol].position()
+    pub fn get_position(&self) -> Decimal {
+        self.pnl.position()
     }
 
     // Order book management
-    pub fn remove_order_book(&mut self, symbol: Symbol) {
-        self.order_books[symbol] = None;
+    pub fn remove_order_book(&mut self) {
+        self.order_book = None;
     }
 
-    pub fn has_order_book(&self, symbol: Symbol) -> bool {
-        self.order_books[symbol].is_some()
+    pub fn has_order_book(&self) -> bool {
+        self.order_book.is_some()
     }
 
     // Active order tracking
@@ -125,7 +119,7 @@ impl State {
     pub fn on_book_ticker_received(&mut self, book_ticker: BookTicker) {
         let bid_level = Level::from((book_ticker.bid_price(), book_ticker.bid_qty()));
         let ask_level = Level::from((book_ticker.ask_price(), book_ticker.ask_qty()));
-        self.bbo_levels[book_ticker.symbol()] = Some((bid_level, ask_level));
+        self.bbo_level = Some((bid_level, ask_level));
     }
 
     pub fn on_update_received(
@@ -152,8 +146,7 @@ impl State {
                 self.complete_order(client_id);
             }
             E::Trade => {
-                let symbol = update_event.symbol();
-                self.pnls[symbol].on_update_received(update_event);
+                self.pnl.on_update_received(update_event);
                 self.turnover += update_event.last_filled_amount();
                 if update_event.order_status() == OrderStatus::Filled {
                     debug!(%client_id, reason="TRADE", "Order removed");
@@ -172,11 +165,5 @@ impl State {
             E::New | E::Amendment => {}
         }
         Ok(())
-    }
-}
-
-impl Default for State {
-    fn default() -> Self {
-        Self::new()
     }
 }
