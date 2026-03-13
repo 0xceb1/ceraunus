@@ -6,9 +6,9 @@ members = ["ceraunus", "data", "trading-core"]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.9"
-tokio = { version = "1.48", features = ["full"] }
+tokio = { version = "1.50", features = ["full"] }
 tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
-reqwest = { version = "0.12" }
+reqwest = { version = "0.13" }
 url = { version = "2.5" }
 futures-util = { version = "0.3" }
 
@@ -22,8 +22,8 @@ thiserror = { version = "2.0" }
 enum-map = { version = "2.7" }
 rustc-hash = { version = "2.1" }
 smallvec = { version = "1.15", features = ["serde"] }
-rust_decimal = { version = "1.39", features = ["macros", "serde"] }
-uuid = { version = "1.19", features = ["v4"] }
+rust_decimal = { version = "1.40", features = ["macros", "serde"] }
+uuid = { version = "1.22", features = ["v4"] }
 chrono = { version = "0.4" }
 
 derive_more = { version = "2.1", features = ["full"] }
