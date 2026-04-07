@@ -8,6 +8,8 @@ use std::time::Duration;
 use anyhow::Result;
 use chrono::Utc;
 use console_subscriber::ConsoleLayer;
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tracing::{error, info, warn};
@@ -15,6 +17,10 @@ use tracing_subscriber::{
     Layer, Registry, filter::LevelFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt,
 };
 use url::Url;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 // Internal crates
 use data::{

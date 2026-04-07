@@ -24,3 +24,6 @@ anyhow = { workspace = true }
 uuid = {workspace = true }
 
 openssl = { workspace = true }
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { version = "0.6" }
