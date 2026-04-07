@@ -63,9 +63,9 @@ pub struct Depth {
     last_final_update_id: OrderBookUpdateId,
 
     #[serde(rename = "b")]
-    bids: Vec<Level>,
+    pub bids: Vec<Level>,
     #[serde(rename = "a")]
-    asks: Vec<Level>,
+    pub asks: Vec<Level>,
 }
 
 /// Payload model for aggTrade stream

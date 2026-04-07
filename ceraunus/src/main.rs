@@ -178,7 +178,7 @@ async fn main() -> Result<()> {
     let mut snapshot_fut = snapshot_task(
         SOLUSDT,
         http.clone(),
-        1000,
+        100,
         Duration::from_millis(1000),
         rest_url.clone(),
     );
@@ -350,6 +350,8 @@ async fn main() -> Result<()> {
                     unrealized_pnl = %state.pnl.unrealized_pnl(),
                     realized_pnl = %state.pnl.realized_pnl(),
                     ob = ?state.order_book.as_ref().map(|ob| ob.show(5)),
+                    ob_bids = state.order_book.as_ref().map_or(0, |ob| ob.bids().len()),
+                    ob_asks = state.order_book.as_ref().map_or(0, |ob| ob.asks().len()),
                     "Trading Summary"
                 );
             }
