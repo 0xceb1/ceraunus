@@ -1,6 +1,6 @@
 use crate::order::*;
 use chrono::{DateTime, Utc};
-use derive_getters::Getters;
+
 use derive_more::Display;
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -124,69 +124,55 @@ impl OrderTradeUpdateEvent {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Getters)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 pub struct OrderTradeUpdate {
     #[serde(rename = "s")]
-    #[getter(copy)]
     symbol: Symbol,
 
     #[serde(rename = "c")]
-    #[getter(copy)]
     client_order_id: Uuid,
 
     #[serde(rename = "S")]
-    #[getter(copy)]
     side: Side,
 
     #[serde(rename = "o")]
-    #[getter(copy)]
     order_kind: OrderKind,
 
     #[serde(rename = "f")]
-    #[getter(copy)]
     time_in_force: TimeInForce,
 
     #[serde(rename = "q")]
-    #[getter(copy)]
     orig_qty: Decimal,
 
     #[serde(rename = "p")]
-    #[getter(copy)]
     orig_price: Decimal,
 
     #[serde(rename = "ap")]
-    #[getter(copy)]
     avg_price: Decimal,
 
     #[serde(rename = "x")]
     exec_type: ExecutionType,
 
     #[serde(rename = "X")]
-    #[getter(copy)]
     order_status: OrderStatus,
 
     #[serde(rename = "i")]
     order_id: u64,
 
     #[serde(rename = "l")]
-    #[getter(copy)]
     last_filled_qty: Decimal,
 
     #[serde(rename = "z")]
-    #[getter(copy)]
     filled_qty: Decimal,
 
     #[serde(rename = "L")]
-    #[getter(copy)]
     last_filled_price: Decimal,
 
     #[serde(rename = "n")]
-    #[getter(copy)]
     // WARN: in USDT
     commission: Decimal,
 
     #[serde(rename = "T", with = "chrono::serde::ts_milliseconds")]
-    #[getter(copy)]
     trade_time: DateTime<Utc>,
 
     #[serde(rename = "t")]
@@ -196,7 +182,6 @@ pub struct OrderTradeUpdate {
     is_maker: bool,
 
     #[serde(rename = "rp")]
-    #[getter(copy)]
     realized_profit: Decimal,
 }
 
@@ -309,10 +294,9 @@ impl AccountUpdateEvent {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Getters)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AccountUpdate {
     #[serde(rename = "m")]
-    #[getter(copy)]
     reason: AccountEventType,
 
     #[serde(rename = "B", default)]
@@ -322,22 +306,19 @@ pub struct AccountUpdate {
     positions: Vec<PositionUpdate>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Getters)]
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[allow(dead_code)]
 pub struct BalanceUpdate {
     #[serde(rename = "a")]
-    #[getter(copy)]
     asset: Asset,
 
     #[serde(rename = "wb")]
-    #[getter(copy)]
     wallet_balance: Decimal,
 
     #[serde(rename = "cw")]
-    #[getter(copy)]
     cross_wallet_balance: Decimal,
 
     #[serde(rename = "bc")]
-    #[getter(copy)]
     balance_change: Decimal, // Balance change except PnL and commission
 }
 
@@ -358,41 +339,33 @@ pub enum PositionSide {
     Short,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Getters)]
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[allow(dead_code)]
 pub struct PositionUpdate {
     #[serde(rename = "s")]
-    #[getter(copy)]
     symbol: Symbol,
 
     #[serde(rename = "pa")]
-    #[getter(copy)]
     position_amount: Decimal,
 
     #[serde(rename = "ep")]
-    #[getter(copy)]
     entry_price: Decimal,
 
     #[serde(rename = "bep")]
-    #[getter(copy)]
     breakeven_price: Decimal,
 
     #[serde(rename = "cr")]
-    #[getter(copy)]
     accumulated_realized: Decimal, // (Pre-fee) Accumulated realized
 
     #[serde(rename = "up")]
-    #[getter(copy)]
     unrealized_pnl: Decimal,
 
     #[serde(rename = "mt")]
-    #[getter(copy)]
     margin_type: MarginType,
 
     #[serde(rename = "iw")]
-    #[getter(copy)]
     isolated_wallet: Decimal,
 
     #[serde(rename = "ps")]
-    #[getter(copy)]
     position_side: PositionSide,
 }

@@ -38,11 +38,11 @@ pub struct State {
 
     pub pnl: ProfitAndLoss,
 
-    start_time: DateTime<Utc>,
+    pub start_time: DateTime<Utc>,
 
     // total traded amount in USDT
     // TODO: deprecate in the future
-    turnover: Decimal,
+    pub turnover: Decimal,
 }
 
 impl State {
@@ -60,16 +60,8 @@ impl State {
         }
     }
 
-    pub fn start_time(&self) -> DateTime<Utc> {
-        self.start_time
-    }
-
-    pub fn turnover(&self) -> Decimal {
-        self.turnover
-    }
-
     pub fn get_position(&self) -> Decimal {
-        self.pnl.position()
+        self.pnl.position
     }
 
     // Order book management
@@ -83,12 +75,12 @@ impl State {
 
     // Active order tracking
     pub fn register_order(&mut self, order: Order) {
-        self.active_orders.insert(order.client_order_id(), order);
+        self.active_orders.insert(order.client_order_id, order);
     }
 
     pub fn register_orders(&mut self, orders: &[Order]) {
         self.active_orders
-            .extend(orders.iter().copied().map(|o| (o.client_order_id(), o)));
+            .extend(orders.iter().copied().map(|o| (o.client_order_id, o)));
     }
 
     pub fn get_active_order(&self, id: &Uuid) -> Option<&Order> {
@@ -111,14 +103,14 @@ impl State {
 
         self.active_orders
             .iter()
-            .filter(|(_, order)| now.signed_duration_since(order.last_update_ts()) >= max_age)
+            .filter(|(_, order)| now.signed_duration_since(order.last_update_ts) >= max_age)
             .map(|(id, _)| *id)
             .collect()
     }
 
     pub fn on_book_ticker_received(&mut self, book_ticker: BookTicker) {
-        let bid_level = Level::from((book_ticker.bid_price(), book_ticker.bid_qty()));
-        let ask_level = Level::from((book_ticker.ask_price(), book_ticker.ask_qty()));
+        let bid_level = Level::from((book_ticker.bid_price, book_ticker.bid_qty));
+        let ask_level = Level::from((book_ticker.ask_price, book_ticker.ask_qty));
         self.bbo_level = Some((bid_level, ask_level));
     }
 

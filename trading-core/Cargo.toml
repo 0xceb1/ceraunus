@@ -14,7 +14,6 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 futures-util = { workspace = true }
 
-derive-getters = { workspace = true, features = ["auto_copy_getters"] }
 derive_more = { workspace = true }
 
 enum-map = { workspace = true }

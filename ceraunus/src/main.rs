@@ -237,8 +237,8 @@ async fn main() -> Result<()> {
             Event::Market(event) => match event {
                 MarketStream::Depth(depth) => {
                     if let Some(ob) = &mut state.order_book {
-                        if (depth.last_final_update_id()..=depth.final_update_id())
-                            .contains(&ob.last_update_id())
+                        if (depth.last_final_update_id..=depth.final_update_id)
+                            .contains(&ob.last_update_id)
                         {
                             // TODO: recheck the gap-detection logic here
                             ob.extend(depth);
@@ -251,9 +251,9 @@ async fn main() -> Result<()> {
                             }
                         } else {
                             warn!(
-                                last_final_update_id = %depth.last_final_update_id(),
-                                first_update_id = %depth.first_update_id(),
-                                final_update_id = %depth.final_update_id(),
+                                last_final_update_id = %depth.last_final_update_id,
+                                first_update_id = %depth.first_update_id,
+                                final_update_id = %depth.final_update_id,
                                 "Gap detected in depth updates"
                             );
                             state.remove_order_book();
@@ -281,14 +281,14 @@ async fn main() -> Result<()> {
                 let mut ob = snapshot_res?;
 
                 for depth in depth_buffer.drain(..) {
-                    if depth.final_update_id() < ob.last_update_id() {
+                    if depth.final_update_id < ob.last_update_id {
                         continue; // too old
                     } else {
                         // TODO: we don't check U <= lastUpdateId AND u >= lastUpdateId here
                         ob.extend(depth);
                     }
                 }
-                info!(last_update_id=%ob.last_update_id(), "Order book ready");
+                info!(last_update_id=%ob.last_update_id, "Order book ready");
                 state.order_book = Some(ob);
             }
 
@@ -301,10 +301,10 @@ async fn main() -> Result<()> {
                         match client.cancel_order(SOLUSDT, stale_id).await {
                             Ok(cancel) => {
                                 info!(
-                                    symbol=%cancel.symbol(),
-                                    price=%cancel.price(),
-                                    client_order_id=%cancel.client_order_id(),
-                                    order_id=%cancel.order_id(),
+                                    symbol=%cancel.symbol,
+                                    price=%cancel.price,
+                                    client_order_id=%cancel.client_order_id,
+                                    order_id=%cancel.order_id,
                                     "Cancel stale order ACK"
                                 );
                             }
@@ -326,10 +326,10 @@ async fn main() -> Result<()> {
                     for result in results {
                         match result {
                             Ok(success) => info!(
-                                symbol=%success.symbol(),
-                                price=%success.price(),
-                                client_order_id=%success.client_order_id(),
-                                order_id=%success.order_id(),
+                                symbol=%success.symbol,
+                                price=%success.price,
+                                client_order_id=%success.client_order_id,
+                                order_id=%success.order_id,
                                 "Open order ACK"
                             ),
                             Err(err) => {
@@ -343,15 +343,15 @@ async fn main() -> Result<()> {
 
             Event::ReportStateTick => {
                 info!(
-                    elapsed = %(Utc::now() - state.start_time()),
-                    turnover = %state.turnover(),
+                    elapsed = %(Utc::now() - state.start_time),
+                    turnover = %state.turnover,
                     curr_pos = %state.get_position(),
-                    exec_pnl = %state.pnl.execution_pnl(),
-                    unrealized_pnl = %state.pnl.unrealized_pnl(),
-                    realized_pnl = %state.pnl.realized_pnl(),
+                    exec_pnl = %state.pnl.execution_pnl,
+                    unrealized_pnl = %state.pnl.unrealized_pnl,
+                    realized_pnl = %state.pnl.realized_pnl,
                     ob = ?state.order_book.as_ref().map(|ob| ob.show(5)),
-                    ob_bids = state.order_book.as_ref().map_or(0, |ob| ob.bids().len()),
-                    ob_asks = state.order_book.as_ref().map_or(0, |ob| ob.asks().len()),
+                    ob_bids = state.order_book.as_ref().map_or(0, |ob| ob.bids.len()),
+                    ob_asks = state.order_book.as_ref().map_or(0, |ob| ob.asks.len()),
                     "Trading Summary"
                 );
             }

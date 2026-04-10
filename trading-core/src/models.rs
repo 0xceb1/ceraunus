@@ -2,7 +2,6 @@ use chrono::{DateTime, Utc};
 use data::binance::account::OrderTradeUpdateEvent;
 use data::binance::market::{Depth, Level};
 use data::order::*;
-use derive_getters::Getters;
 use reqwest::Client;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -15,21 +14,19 @@ use crate::error::Result as TradingCoreResult;
 type BboPair = (Level, Level); // (bid_level, ask_level)
 
 /// Local record for an order
-#[derive(Debug, Clone, Copy, Serialize, Getters)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct Order {
     symbol: Symbol,
     side: Side,
-    #[getter(copy)]
     #[serde(skip)]
+    #[allow(dead_code)]
     start_ts: DateTime<Utc>,
     #[serde(skip_serializing)]
     order_id: Option<u64>,
     #[serde(rename = "newClientOrderId")]
-    #[getter(copy)]
-    client_order_id: Uuid,
+    pub client_order_id: Uuid,
     #[serde(skip_serializing)]
-    #[getter(copy)]
-    last_update_ts: DateTime<Utc>,
+    pub last_update_ts: DateTime<Utc>,
 
     #[serde(rename = "type")]
     kind: OrderKind, // a limit order can be transformed into market order due to price drift
@@ -42,9 +39,9 @@ pub struct Order {
     #[serde(rename = "quantity")]
     orig_qty: Decimal,
     #[serde(rename = "timeInForce")]
-    time_in_force: TimeInForce,
+    pub time_in_force: TimeInForce,
     #[serde(rename = "goodTillDate", skip_serializing_if = "Option::is_none")]
-    good_till_date: Option<u64>,
+    pub good_till_date: Option<u64>,
     #[serde(skip_serializing)]
     status: Option<OrderStatus>,
 }
@@ -99,14 +96,14 @@ impl Order {
     }
 }
 
-#[derive(Debug, Getters)]
+#[derive(Debug)]
 pub struct OrderBook {
     symbol: Symbol,
     local_ts: DateTime<Utc>,
     xchg_ts: DateTime<Utc>,
-    last_update_id: u64,
-    bids: Vec<Level>, // price low to high
-    asks: Vec<Level>, // price high to low
+    pub last_update_id: u64,
+    pub bids: Vec<Level>, // price low to high
+    pub asks: Vec<Level>, // price high to low
 }
 
 impl OrderBook {
@@ -144,7 +141,6 @@ impl OrderBook {
     }
 
     pub fn show(&self, depth: usize) -> String {
-        //TODO: benchmark the perf
         format!(
             "[B:{}|A:{}]",
             self.bids
@@ -166,9 +162,9 @@ impl OrderBook {
 
     /// Neither self.bids nor self.asks should be empty
     pub fn extend(&mut self, depth: Depth) {
-        self.xchg_ts = depth.transaction_time();
+        self.xchg_ts = depth.transaction_time;
         self.local_ts = Utc::now();
-        self.last_update_id = depth.final_update_id();
+        self.last_update_id = depth.final_update_id;
 
         for upd in &depth.bids {
             let mut i = self.bids.len();
@@ -250,22 +246,16 @@ struct DepthSnapshot {
 }
 
 /// PnL per symbol
-#[derive(Debug, Clone, Copy, Getters)]
+#[derive(Debug, Clone, Copy)]
 pub struct ProfitAndLoss {
-    #[getter(copy)]
-    execution_pnl: Decimal, // WARN: in USDT, Commission??
-    #[getter(copy)]
-    unrealized_pnl: Decimal,
-    #[getter(copy)]
-    realized_pnl: Decimal,
+    pub execution_pnl: Decimal, // WARN: in USDT, Commission??
+    pub unrealized_pnl: Decimal,
+    pub realized_pnl: Decimal,
     avg_entry_price: Decimal,
-    #[getter(copy)]
-    position: Decimal, // as of qty
+    pub position: Decimal, // as of qty
     buy_qty: Decimal,
     sell_qty: Decimal,
-    #[getter(copy)]
     buy_amount: Decimal,
-    #[getter(copy)]
     sell_amount: Decimal,
 }
 

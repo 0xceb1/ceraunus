@@ -167,7 +167,7 @@ impl Client {
 
     pub async fn open_order(&self, request: Order) -> Result<OrderSuccessResp> {
         // TODO: remove this check
-        match (request.time_in_force(), request.good_till_date()) {
+        match (request.time_in_force, request.good_till_date) {
             (TimeInForce::GoodUntilDate, Some(_)) => {}
             (TimeInForce::GoodUntilDate, None) | (_, Some(_)) => {
                 return Err(DataError::BadDefinition {
@@ -282,14 +282,14 @@ mod tests {
             .await
             .expect("Failed to open order");
 
-        assert!(success.order_id() > 0, "Invalid orderId");
+        assert!(success.order_id > 0, "Invalid orderId");
     }
 
     #[tokio::test()]
     async fn test_cancel_order() {
         let order_request = make_order();
         let client = make_client();
-        let client_order_id = order_request.client_order_id();
+        let client_order_id = order_request.client_order_id;
 
         let _success: OrderSuccessResp = client
             .open_order(order_request)
@@ -301,6 +301,6 @@ mod tests {
             .await
             .expect("Failed to cancel order");
 
-        assert_eq!(cancel_success.status(), OrderStatus::Canceled);
+        assert_eq!(cancel_success.status, OrderStatus::Canceled);
     }
 }

@@ -19,7 +19,6 @@ tracing = { workspace = true }
 csv = "1.4.0"
 
 derive_more = { workspace = true }
-derive-getters = { workspace = true, features = ["auto_copy_getters"] }
 enum-map = { workspace = true }
 
 openssl = { workspace = true }
