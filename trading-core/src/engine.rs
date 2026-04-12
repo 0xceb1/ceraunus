@@ -10,9 +10,9 @@ use crate::{
 use data::{
     binance::{
         private::OrderTradeUpdateEvent,
-        public::{BookTicker, Level},
+        public::BookTicker,
     },
-    order::*,
+    types::*,
 };
 use tracing::debug;
 

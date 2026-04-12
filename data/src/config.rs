@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::error::{ConfigError, DataError};
-use crate::order::Symbol;
+use crate::types::Symbol;
 use csv::Reader;
 use serde::{Deserialize, Deserializer};
 use std::fs;

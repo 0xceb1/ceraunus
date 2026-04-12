@@ -5,7 +5,7 @@ use data::{
     DataError,
     binance::private::OrderSuccessResp,
     config::AccountConfidential,
-    order::{Symbol, TimeInForce},
+    types::{Symbol, TimeInForce},
 };
 use hmac::{Hmac, Mac};
 use reqwest::{self, Response, StatusCode};
@@ -235,7 +235,7 @@ mod tests {
     use data::{
         binance::private::OrderSuccessResp,
         config::DataCenterConfig,
-        order::{OrderKind, OrderStatus, Side, Symbol::BNBUSDT, TimeInForce},
+        types::{OrderKind, OrderStatus, Side, Symbol::BNBUSDT, TimeInForce},
     };
     use rust_decimal::{Decimal, dec};
 

@@ -16,7 +16,7 @@ use url::Url;
 use crate::binance::market::*;
 use crate::binance::private::{AccountUpdateEvent, OrderTradeUpdateEvent, TradeLite};
 use crate::binance::public::*;
-use crate::order::Symbol;
+use crate::types::Symbol;
 
 #[derive(Debug, Serialize, Clone, Display)]
 #[serde(rename_all = "UPPERCASE")]

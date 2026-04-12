@@ -1,5 +1,5 @@
 //! Payload models for Binance *private* data streams (user data)
-use crate::order::*;
+use crate::types::*;
 use chrono::{DateTime, Utc};
 
 use derive_more::Display;

@@ -1,5 +1,5 @@
 //! Payload models for Binance *market* data streams (regular market data)
-use crate::order::Symbol;
+use crate::types::Symbol;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};

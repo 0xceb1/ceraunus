@@ -26,7 +26,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 use data::{
     binance::public::Depth,
     binance::subscription::{AccountStream, MarketStream, StreamCommand, StreamSpec, WsSession},
-    order::{Symbol, Symbol::SOLUSDT},
+    types::{Symbol, Symbol::SOLUSDT},
 };
 use trading_core::{
     OrderBook, Result as ClientResult,

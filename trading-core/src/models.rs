@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use data::binance::private::OrderTradeUpdateEvent;
-use data::binance::public::{Depth, Level};
-use data::order::*;
+use data::binance::public::Depth;
+use data::types::*;
 use reqwest::Client;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
