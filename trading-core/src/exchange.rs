@@ -3,7 +3,7 @@ use crate::models::Order;
 use chrono::Utc;
 use data::{
     DataError,
-    binance::response::OrderSuccessResp,
+    binance::private::OrderSuccessResp,
     config::AccountConfidential,
     order::{Symbol, TimeInForce},
 };
@@ -233,7 +233,7 @@ mod tests {
     use super::*;
     use chrono::{Duration, Utc};
     use data::{
-        binance::response::OrderSuccessResp,
+        binance::private::OrderSuccessResp,
         config::DataCenterConfig,
         order::{OrderKind, OrderStatus, Side, Symbol::BNBUSDT, TimeInForce},
     };

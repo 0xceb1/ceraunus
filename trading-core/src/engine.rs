@@ -9,8 +9,8 @@ use crate::{
 };
 use data::{
     binance::{
-        account::OrderTradeUpdateEvent,
-        market::{BookTicker, Level},
+        private::OrderTradeUpdateEvent,
+        public::{BookTicker, Level},
     },
     order::*,
 };
@@ -119,7 +119,7 @@ impl State {
         update_event: &OrderTradeUpdateEvent,
     ) -> TradingCoreResult<()> {
         use TradingCoreError as Err;
-        use data::binance::account::ExecutionType as E;
+        use data::binance::private::ExecutionType as E;
         let client_id = update_event.client_order_id();
 
         let order = self.active_orders.get_mut(&client_id).ok_or_else(|| {

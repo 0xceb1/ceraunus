@@ -24,7 +24,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 // Internal crates
 use data::{
-    binance::market::Depth,
+    binance::public::Depth,
     binance::subscription::{AccountStream, MarketStream, StreamCommand, StreamSpec, WsSession},
     order::{Symbol, Symbol::SOLUSDT},
 };

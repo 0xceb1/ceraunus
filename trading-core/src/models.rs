@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
-use data::binance::account::OrderTradeUpdateEvent;
-use data::binance::market::{Depth, Level};
+use data::binance::private::OrderTradeUpdateEvent;
+use data::binance::public::{Depth, Level};
 use data::order::*;
 use reqwest::Client;
 use rust_decimal::Decimal;

@@ -1,11 +1,20 @@
+//! Payload models for Binance *private* data streams (user data)
 use crate::order::*;
 use chrono::{DateTime, Utc};
 
 use derive_more::Display;
 use rust_decimal::Decimal;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Binance order execution type, primarily used in [`ORDER_TRADE_UPDATE` stream](https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Order-Update).
+///
+///  * NEW
+///  * CANCELED
+///  * CALCULATED - Liquidation Execution
+///  * EXPIRED
+///  * TRADE
+///  * AMENDMENT - Order Modified
 #[derive(Debug, Clone, Copy, Deserialize, Display)]
 #[serde(rename_all = "UPPERCASE")]
 #[display(rename_all = "UPPERCASE")]
@@ -18,8 +27,7 @@ pub enum ExecutionType {
     Amendment,
 }
 
-/// Top-level payload model for verbose `ORDER_TRADE_UPDATE` stream
-/// https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Order-Update
+/// Top-level payload model for [`ORDER_TRADE_UPDATE` stream](https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Order-Update).
 #[derive(Debug, Clone, Copy, Deserialize)]
 pub struct OrderTradeUpdateEvent {
     #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
@@ -124,6 +132,9 @@ impl OrderTradeUpdateEvent {
     }
 }
 
+/// Binance [`ORDER_TRADE_UPDATE` stream](https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Order-Update).
+///
+/// When new order created, order status changed will push such event. event type is `ORDER_TRADE_UPDATE`.
 #[derive(Debug, Clone, Copy, Deserialize)]
 pub struct OrderTradeUpdate {
     #[serde(rename = "s")]
@@ -185,8 +196,9 @@ pub struct OrderTradeUpdate {
     realized_profit: Decimal,
 }
 
-/// Payload model for `TRADE_LITE` stream
-/// https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Trade-Lite
+/// Binance [`TRADE_LITE` stream](https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Trade-Lite).
+///
+/// Fast trade stream reduces data latency compared original `ORDER_TRADE_UPDATE` stream. However, it only pushes TRADE Execution Type, and fewer data fields.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[allow(dead_code)]
 pub struct TradeLite {
@@ -233,6 +245,7 @@ impl TradeLite {
     }
 }
 
+/// Binance reason type for account event (field "m" in `ACCOUNT_UPDATE` stream).
 #[derive(Debug, Clone, Copy, Deserialize, Display)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[display(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -256,8 +269,7 @@ pub enum AccountEventType {
     CoinSwapWithdraw,
 }
 
-/// Top-level payload model for `ACCOUNT_UPDATE` stream
-/// https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Balance-and-Position-Update
+/// Top-level payload model for [`ACCOUNT_UPDATE` stream](https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Balance-and-Position-Update).
 #[derive(Debug, Clone, Deserialize)]
 pub struct AccountUpdateEvent {
     #[serde(rename = "E", with = "chrono::serde::ts_milliseconds")]
@@ -294,6 +306,9 @@ impl AccountUpdateEvent {
     }
 }
 
+/// Binance [`ACCOUNT_UPDATE` stream](https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Balance-and-Position-Update).
+///
+/// `ACCOUNT_UPDATE` will be pushed only when update happens on user's account, including changes on balances, positions, or margin type.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AccountUpdate {
     #[serde(rename = "m")]
@@ -306,6 +321,7 @@ pub struct AccountUpdate {
     positions: Vec<PositionUpdate>,
 }
 
+/// Field "B" in `ACCOUNT_UPDATE` stream, representing changes in cash(asset) position.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[allow(dead_code)]
 pub struct BalanceUpdate {
@@ -325,7 +341,7 @@ pub struct BalanceUpdate {
 #[derive(Debug, Clone, Copy, Deserialize, Display)]
 #[serde(rename_all = "lowercase")]
 #[display(rename_all = "lowercase")]
-pub enum MarginType {
+enum MarginType {
     Isolated,
     Cross,
 }
@@ -333,7 +349,7 @@ pub enum MarginType {
 #[derive(Debug, Clone, Copy, Deserialize, Display)]
 #[serde(rename_all = "UPPERCASE")]
 #[display(rename_all = "UPPERCASE")]
-pub enum PositionSide {
+enum PositionSide {
     Both,
     Long,
     Short,
@@ -368,4 +384,23 @@ pub struct PositionUpdate {
 
     #[serde(rename = "ps")]
     position_side: PositionSide,
+}
+
+/// REST response for successful order operations (open, cancel, query).
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderSuccessResp {
+    pub order_id: u64,
+    pub symbol: Symbol,
+    pub status: OrderStatus,
+    pub client_order_id: Uuid,
+    pub price: Decimal, // quoted price
+    // avg_price: Decimal,    // avg filled price
+    orig_qty: Decimal,     // initial quoted quantity
+    executed_qty: Decimal, // filled quantity
+    cum_qty: Decimal,      // filled quantity
+    cum_quote: Decimal,    // filled amount in usdt
+    side: Side,
+    #[serde(with = "chrono::serde::ts_milliseconds")]
+    update_time: DateTime<Utc>,
 }

@@ -13,8 +13,9 @@ use tokio_tungstenite::{
 use tracing::warn;
 use url::Url;
 
-use crate::binance::account::{AccountUpdateEvent, OrderTradeUpdateEvent, TradeLite};
 use crate::binance::market::*;
+use crate::binance::private::{AccountUpdateEvent, OrderTradeUpdateEvent, TradeLite};
+use crate::binance::public::*;
 use crate::order::Symbol;
 
 #[derive(Debug, Serialize, Clone, Display)]
