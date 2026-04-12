@@ -122,9 +122,15 @@ async fn main() -> Result<()> {
 
     let listen_key = client.get_listen_key().await?;
 
-    let ws_url = match cfg.account.environment {
-        data::config::Environment::Production => &cfg.exchange.ws.endpoints.production,
-        data::config::Environment::Testnet => &cfg.exchange.ws.endpoints.testnet,
+    let (ws_public_url, ws_private_url) = match cfg.account.environment {
+        data::config::Environment::Production => (
+            &cfg.exchange.ws.public.production,
+            &cfg.exchange.ws.private.production,
+        ),
+        data::config::Environment::Testnet => (
+            &cfg.exchange.ws.public.testnet,
+            &cfg.exchange.ws.private.testnet,
+        ),
     };
 
     let rest_url = match cfg.account.environment {
@@ -132,8 +138,11 @@ async fn main() -> Result<()> {
         data::config::Environment::Testnet => &cfg.exchange.rest.endpoints.testnet,
     };
 
-    let mkt_url = Url::parse(ws_url)?;
-    let acct_url = Url::parse(&format!("{}/{}", ws_url, listen_key))?;
+    let mkt_url = Url::parse(ws_public_url)?;
+    let acct_url = Url::parse(&format!(
+        "{}/ws?listenKey={}",
+        ws_private_url, listen_key
+    ))?;
 
     let ws_config = WebSocketConfig::default()
         .write_buffer_size(0)

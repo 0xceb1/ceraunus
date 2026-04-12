@@ -96,7 +96,9 @@ pub struct RestConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct WsConfig {
-    pub endpoints: EndpointMap,
+    pub public: EndpointMap,
+    pub market: EndpointMap,
+    pub private: EndpointMap,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -26,7 +26,14 @@ production = "https://fapi.binance.com"
 testnet = "https://demo-fapi.binance.com"
 
 
-[exchange.ws.endpoints]
-# streams API ???
-production = "wss://fstream.binance.com/ws"
-testnet = "wss://fstream.binancefuture.com/ws"
+[exchange.ws.public]
+production = "wss://fstream.binance.com/public"
+testnet = "wss://fstream.binancefuture.com/public"
+
+[exchange.ws.market]
+production = "wss://fstream.binance.com/market"
+testnet = "wss://fstream.binancefuture.com/market"
+
+[exchange.ws.private]
+production = "wss://fstream.binance.com/private"
+testnet = "wss://fstream.binancefuture.com/private"
