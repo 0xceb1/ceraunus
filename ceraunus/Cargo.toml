@@ -3,6 +3,10 @@ name = "ceraunus"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["testnet"]
+testnet = ["trading-core/testnet"]
+
 [dependencies]
 trading-core = { path = "../trading-core" }
 data = { path = "../data" }

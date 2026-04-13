@@ -14,26 +14,5 @@ level = "DEBUG"
 pretty = true
 
 [account]
-exchange = "binance"                      # binance only
-environment = "testnet"                   # testnet or production
 name = "test"
 csv_path = "./config/test_account_info.csv"
-
-[exchange]
-symbols = ["SOLUSDT"]
-[exchange.rest.endpoints]
-production = "https://fapi.binance.com"
-testnet = "https://demo-fapi.binance.com"
-
-
-[exchange.ws.public]
-production = "wss://fstream.binance.com/public"
-testnet = "wss://fstream.binancefuture.com/public"
-
-[exchange.ws.market]
-production = "wss://fstream.binance.com/market"
-testnet = "wss://fstream.binancefuture.com/market"
-
-[exchange.ws.private]
-production = "wss://fstream.binance.com/private"
-testnet = "wss://fstream.binancefuture.com/private"

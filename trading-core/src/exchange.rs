@@ -36,16 +36,11 @@ impl Client {
     ) -> Result<Self> {
         let confidential = AccountConfidential::from_csv(&cfg.account.name, &cfg.account.csv_path)?;
 
-        let endpoint = match cfg.account.environment {
-            data::config::Environment::Production => cfg.exchange.rest.endpoints.production.clone(),
-            data::config::Environment::Testnet => cfg.exchange.rest.endpoints.testnet.clone(),
-        };
-
         Ok(Self {
             api_key: confidential.api_key,
             api_secret: confidential.api_secret,
             http_client,
-            endpoint,
+            endpoint: data::config::endpoints::REST.to_string(),
         })
     }
 

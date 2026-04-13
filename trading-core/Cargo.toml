@@ -3,6 +3,9 @@ name = "trading-core"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+testnet = ["data/testnet"]
+
 [dependencies]
 data = { path = "../data" }
 rust_decimal = { workspace = true, features = ["macros", "serde"] }

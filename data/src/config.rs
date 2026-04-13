@@ -1,6 +1,5 @@
 use crate::Result;
 use crate::error::{ConfigError, DataError};
-use crate::types::Symbol;
 use csv::Reader;
 use serde::{Deserialize, Deserializer};
 use std::fs;
@@ -69,50 +68,31 @@ pub struct LoggingConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Environment {
-    Production,
-    Testnet,
-}
-
-#[derive(Debug, Clone, Deserialize)]
 pub struct AccountConfig {
-    pub exchange: String,
-    pub environment: Environment,
     pub name: String,
     pub csv_path: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct EndpointMap {
-    pub production: String,
-    pub testnet: String,
+#[cfg(feature = "testnet")]
+pub mod endpoints {
+    pub const REST: &str = "https://demo-fapi.binance.com";
+    pub const WS_PUBLIC: &str = "wss://fstream.binancefuture.com/public";
+    pub const WS_MARKET: &str = "wss://fstream.binancefuture.com/market";
+    pub const WS_PRIVATE: &str = "wss://fstream.binancefuture.com/private";
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct RestConfig {
-    pub endpoints: EndpointMap,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct WsConfig {
-    pub public: EndpointMap,
-    pub market: EndpointMap,
-    pub private: EndpointMap,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ExchangeConfig {
-    pub symbols: Vec<Symbol>,
-    pub rest: RestConfig,
-    pub ws: WsConfig,
+#[cfg(not(feature = "testnet"))]
+pub mod endpoints {
+    pub const REST: &str = "https://fapi.binance.com";
+    pub const WS_PUBLIC: &str = "wss://fstream.binance.com/public";
+    pub const WS_MARKET: &str = "wss://fstream.binance.com/market";
+    pub const WS_PRIVATE: &str = "wss://fstream.binance.com/private";
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DataCenterConfig {
     pub logging: LoggingConfig,
     pub account: AccountConfig,
-    pub exchange: ExchangeConfig,
 }
 
 impl DataCenterConfig {

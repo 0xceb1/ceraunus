@@ -122,26 +122,12 @@ async fn main() -> Result<()> {
 
     let listen_key = client.get_listen_key().await?;
 
-    let (ws_public_url, ws_private_url) = match cfg.account.environment {
-        data::config::Environment::Production => (
-            &cfg.exchange.ws.public.production,
-            &cfg.exchange.ws.private.production,
-        ),
-        data::config::Environment::Testnet => (
-            &cfg.exchange.ws.public.testnet,
-            &cfg.exchange.ws.private.testnet,
-        ),
-    };
+    use data::config::endpoints;
 
-    let rest_url = match cfg.account.environment {
-        data::config::Environment::Production => &cfg.exchange.rest.endpoints.production,
-        data::config::Environment::Testnet => &cfg.exchange.rest.endpoints.testnet,
-    };
-
-    let mkt_url = Url::parse(ws_public_url)?;
+    let mkt_url = Url::parse(endpoints::WS_PUBLIC)?;
     let acct_url = Url::parse(&format!(
         "{}/ws?listenKey={}",
-        ws_private_url, listen_key
+        endpoints::WS_PRIVATE, listen_key
     ))?;
 
     let ws_config = WebSocketConfig::default()
@@ -189,7 +175,6 @@ async fn main() -> Result<()> {
         http.clone(),
         100,
         Duration::from_millis(1000),
-        rest_url.clone(),
     );
     let mut keepalive_interval = tokio::time::interval(Duration::from_secs(50 * 60));
     let mut send_order_interval = tokio::time::interval(Duration::from_secs(10));
@@ -271,7 +256,6 @@ async fn main() -> Result<()> {
                                 http.clone(),
                                 1000,
                                 Duration::from_millis(1000),
-                                rest_url.clone(),
                             );
                         }
                     } else {
@@ -383,12 +367,11 @@ fn snapshot_task(
     http: reqwest::Client,
     depth: u16,
     delay: Duration,
-    rest_endpoint: String,
 ) -> Pin<Box<dyn Future<Output = ClientResult<OrderBook>> + Send>> {
     Box::pin(async move {
         if !delay.is_zero() {
             tokio::time::sleep(delay).await;
         }
-        OrderBook::from_snapshot(symbol, depth, &rest_endpoint, http).await
+        OrderBook::from_snapshot(symbol, depth, data::config::endpoints::REST, http).await
     })
 }
