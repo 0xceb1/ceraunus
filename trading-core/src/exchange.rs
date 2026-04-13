@@ -7,7 +7,7 @@ use data::{
     config::AccountConfidential,
     types::{Symbol, TimeInForce},
 };
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use reqwest::{self, Response, StatusCode};
 use serde_json::Value;
 use sha2::Sha256;
