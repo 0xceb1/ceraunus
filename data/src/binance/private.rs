@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use derive_more::Display;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 use uuid::Uuid;
 
 /// Binance order execution type, primarily used in [`ORDER_TRADE_UPDATE` stream](https://developers.binance.com/docs/derivatives/usds-margined-futures/user-data-streams/Event-Order-Update).
@@ -213,7 +214,7 @@ pub struct TradeLite {
     #[serde(rename = "p")]
     orig_price: Decimal,
     #[serde(rename = "m")]
-    is_makter: bool,
+    is_maker: bool,
     #[serde(rename = "c")]
     client_order_id: Uuid,
     #[serde(rename = "S")]
@@ -231,15 +232,15 @@ pub struct TradeLite {
 
 impl TradeLite {
     pub fn log(&self) {
-        tracing::info!(
-            client_order_id=%self.client_order_id,
-            symbol=%self.symbol,
-            orig_price=%self.orig_price,
-            orig_qty=%self.orig_qty,
-            last_filled_price=%self.last_filled_price,
-            last_filled_qty=%self.last_filled_qty,
-            is_makter=%self.is_makter,
-            side=%self.side,
+        info!(
+            client_order_id = %self.client_order_id,
+            symbol = %self.symbol,
+            orig_price = %self.orig_price,
+            orig_qty = %self.orig_qty,
+            last_filled_price = %self.last_filled_price,
+            last_filled_qty = %self.last_filled_qty,
+            is_maker = %self.is_maker,
+            side = %self.side,
             "TradeLite event received"
         );
     }
@@ -402,4 +403,18 @@ pub struct OrderSuccessResp {
     side: Side,
     #[serde(with = "chrono::serde::ts_milliseconds")]
     update_time: DateTime<Utc>,
+}
+
+impl OrderSuccessResp {
+    pub fn log(&self, msg: &str) {
+        info!(
+            symbol = %self.symbol,
+            side = %self.side,
+            status = %self.status,
+            price = %self.price,
+            client_order_id = %self.client_order_id,
+            order_id = %self.order_id,
+            "{msg}"
+        );
+    }
 }

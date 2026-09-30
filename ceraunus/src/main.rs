@@ -147,7 +147,7 @@ async fn main() -> Result<()> {
         ]))
         .await?;
 
-    info!("----------INITILIAZATION FINISHED----------");
+    info!("----------INITIALIZATION FINISHED----------");
 
     let mut state: State = State::new(SOLUSDT);
 
@@ -180,7 +180,7 @@ async fn main() -> Result<()> {
 
             _ = cancel_order_interval.tick() => cancel_stale_orders(&state, &client),
 
-            snapshot_res = &mut snapshot, if !state.book.is_ready() => state.book.on_snapshot(snapshot_res?),
+            snapshot_res = &mut snapshot, if !state.book.is_ready() => state.book.on_snapshot_received(snapshot_res?),
 
             _ = keepalive_interval.tick() => keepalive_listen_key(&client),
         }
@@ -224,13 +224,7 @@ fn send_quotes(state: &mut State, client: &Arc<Client>) {
 
         for result in results {
             match result {
-                Ok(success) => info!(
-                    symbol=%success.symbol,
-                    price=%success.price,
-                    client_order_id=%success.client_order_id,
-                    order_id=%success.order_id,
-                    "Open order ACK"
-                ),
+                Ok(success) => success.log("Open order ACK"),
                 Err(err) => {
                     // TODO: complete the order
                     warn!(%err, "Open order failed");
@@ -241,22 +235,12 @@ fn send_quotes(state: &mut State, client: &Arc<Client>) {
 }
 
 fn cancel_stale_orders(state: &State, client: &Arc<Client>) {
-    for stale_id in state.stale_order_ids(STALE_ORDER_THRESHOLD) {
+    for client_order_id in state.stale_order_ids(STALE_ORDER_THRESHOLD) {
         let client = Arc::clone(client);
         tokio::spawn(async move {
-            match client.cancel_order(SOLUSDT, stale_id).await {
-                Ok(cancel) => {
-                    info!(
-                        symbol=%cancel.symbol,
-                        price=%cancel.price,
-                        client_order_id=%cancel.client_order_id,
-                        order_id=%cancel.order_id,
-                        "Cancel stale order ACK"
-                    );
-                }
-                Err(err) => {
-                    error!(%err, %stale_id, "Cancel stale order failed");
-                }
+            match client.cancel_order(SOLUSDT, client_order_id).await {
+                Ok(cancel) => cancel.log("Cancel stale order ACK"),
+                Err(err) => error!(%err, %client_order_id, "Cancel stale order failed"),
             }
         });
     }
@@ -281,7 +265,7 @@ fn keepalive_listen_key(client: &Arc<Client>) {
     let client = Arc::clone(client);
     tokio::spawn(async move {
         match client.keepalive_listen_key().await {
-            Ok(key) => info!(listen_key=%key, "Listen key keepalive sent"),
+            Ok(key) => info!(listen_key = %key, "Listen key keepalive sent"),
             Err(err) => error!(%err, "Listen key keepalive failed"),
         }
     });

@@ -66,7 +66,7 @@ impl State {
 
     /// Returns true if a gap is detected and a new snapshot is needed
     pub fn on_depth_received(&mut self, depth: Depth) -> bool {
-        let need_snapshot = self.book.on_depth(depth);
+        let need_snapshot = self.book.on_depth_received(depth);
         if let Some(ob) = self.book.order_book()
             && ob.get_bbo() != self.bbo_level
         {
@@ -126,29 +126,32 @@ impl State {
     ) -> TradingCoreResult<()> {
         use TradingCoreError as Err;
         use data::binance::private::ExecutionType as E;
-        let client_id = update_event.client_order_id();
+        let client_order_id = update_event.client_order_id();
 
-        let order = self.active_orders.get_mut(&client_id).ok_or_else(|| {
-            // TODO: more robust
-            if self.hist_orders.contains(&client_id) {
-                Err::Unknown(format!("Order has been removed {}", client_id))
-            } else {
-                Err::Unknown(format!("Untracked order {}", client_id))
-            }
-        })?;
+        let order = self
+            .active_orders
+            .get_mut(&client_order_id)
+            .ok_or_else(|| {
+                // TODO: more robust
+                if self.hist_orders.contains(&client_order_id) {
+                    Err::Unknown(format!("Order has been removed {}", client_order_id))
+                } else {
+                    Err::Unknown(format!("Untracked order {}", client_order_id))
+                }
+            })?;
 
         order.on_update_received(update_event);
         match update_event.exec_type() {
             reason @ (E::Canceled | E::Calculated | E::Expired) => {
-                debug!(%client_id, %reason, "Order removed");
-                self.complete_order(client_id);
+                debug!(%client_order_id, %reason, "Order removed");
+                self.complete_order(client_order_id);
             }
             E::Trade => {
                 self.pnl.on_update_received(update_event);
                 self.turnover += update_event.last_filled_amount();
                 if update_event.order_status() == OrderStatus::Filled {
-                    debug!(%client_id, reason="TRADE", "Order removed");
-                    self.complete_order(client_id);
+                    debug!(%client_order_id, reason = "TRADE", "Order removed");
+                    self.complete_order(client_order_id);
                 }
             }
             E::Amendment
@@ -157,8 +160,8 @@ impl State {
                     OrderStatus::Filled | OrderStatus::Canceled
                 ) =>
             {
-                debug!(%client_id, reason="AMENDMENT", "Order removed");
-                self.complete_order(client_id);
+                debug!(%client_order_id, reason = "AMENDMENT", "Order removed");
+                self.complete_order(client_order_id);
             }
             E::New | E::Amendment => {}
         }

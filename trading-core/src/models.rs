@@ -84,7 +84,7 @@ impl Order {
         self.curr_qty = update_event.last_filled_qty();
         if update_event.order_kind() == OrderKind::Market && self.kind == OrderKind::Limit {
             warn!(
-                client_id = %update_event.client_order_id(),
+                client_order_id = %update_event.client_order_id(),
                 order_status = %update_event.order_status(),
                 total_filled_qty = %update_event.filled_qty(),
                 this_filled_qty = %update_event.last_filled_qty(),
@@ -269,7 +269,7 @@ impl Book {
     }
 
     /// Returns true if a gap is detected and a new snapshot is needed
-    pub fn on_depth(&mut self, depth: Depth) -> bool {
+    pub fn on_depth_received(&mut self, depth: Depth) -> bool {
         match self {
             Book::Syncing(buffer) => {
                 buffer.push(depth);
@@ -296,7 +296,7 @@ impl Book {
         }
     }
 
-    pub fn on_snapshot(&mut self, mut ob: OrderBook) {
+    pub fn on_snapshot_received(&mut self, mut ob: OrderBook) {
         if let Book::Syncing(buffer) = self {
             for depth in buffer.drain(..) {
                 // TODO: we don't check U <= lastUpdateId AND u >= lastUpdateId here
