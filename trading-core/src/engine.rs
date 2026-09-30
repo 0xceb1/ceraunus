@@ -10,11 +10,11 @@ use crate::{
 use data::{
     binance::{
         private::OrderTradeUpdateEvent,
-        public::BookTicker,
+        public::{BookTicker, Depth},
     },
     types::*,
 };
-use tracing::debug;
+use tracing::{debug, warn};
 
 type BboPair = (Level, Level);
 
@@ -26,7 +26,7 @@ pub struct State {
     pub bbo_level: Option<BboPair>, // (bid_level, ask_level)
 
     // local order book
-    pub order_book: Option<OrderBook>,
+    pub book: Book,
 
     // orders that may still receive updates
     active_orders: FxHashMap<Uuid, Order>,
@@ -50,7 +50,7 @@ impl State {
         Self {
             symbol,
             bbo_level: None,
-            order_book: None,
+            book: Book::default(),
             active_orders: FxHashMap::with_capacity_and_hasher(128, FxBuildHasher),
             hist_orders: FxHashSet::with_capacity_and_hasher(1024, FxBuildHasher),
             // TODO: construct from init pos
@@ -64,13 +64,19 @@ impl State {
         self.pnl.position
     }
 
-    // Order book management
-    pub fn remove_order_book(&mut self) {
-        self.order_book = None;
-    }
-
-    pub fn has_order_book(&self) -> bool {
-        self.order_book.is_some()
+    /// Returns true if a gap is detected and a new snapshot is needed
+    pub fn on_depth_received(&mut self, depth: Depth) -> bool {
+        let need_snapshot = self.book.on_depth(depth);
+        if let Some(ob) = self.book.order_book()
+            && ob.get_bbo() != self.bbo_level
+        {
+            warn!(
+                ob_bbo = ?ob.get_bbo(),
+                bbo = ?self.bbo_level,
+                "Orderbook and BBO level do not match"
+            );
+        }
+        need_snapshot
     }
 
     // Active order tracking

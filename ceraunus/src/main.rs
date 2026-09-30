@@ -1,6 +1,4 @@
 // std
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -24,9 +22,9 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 // Internal crates
 use data::{
-    binance::public::Depth,
     binance::subscription::{AccountStream, MarketStream, StreamCommand, StreamSpec, WsSession},
-    types::{Symbol, Symbol::SOLUSDT},
+    config::endpoints,
+    types::Symbol::SOLUSDT,
 };
 use trading_core::{
     OrderBook, Result as ClientResult,
@@ -122,12 +120,11 @@ async fn main() -> Result<()> {
 
     let listen_key = client.get_listen_key().await?;
 
-    use data::config::endpoints;
-
     let mkt_url = Url::parse(&format!("{}/ws", endpoints::WS_PUBLIC))?;
     let acct_url = Url::parse(&format!(
         "{}/ws?listenKey={}",
-        endpoints::WS_PRIVATE, listen_key
+        endpoints::WS_PRIVATE,
+        listen_key
     ))?;
 
     let ws_config = WebSocketConfig::default()
@@ -169,13 +166,7 @@ async fn main() -> Result<()> {
 
     let mut state: State = State::new(SOLUSDT);
 
-    let mut depth_buffer: Vec<Depth> = Vec::with_capacity(8);
-    let mut snapshot_fut = snapshot_task(
-        SOLUSDT,
-        http.clone(),
-        100,
-        Duration::from_millis(1000),
-    );
+    let mut snapshot = Box::pin(fetch_snapshot(http.clone(), 100));
     let mut keepalive_interval = tokio::time::interval(Duration::from_secs(50 * 60));
     let mut send_order_interval = tokio::time::interval(Duration::from_secs(10));
     let mut cancel_order_interval = tokio::time::interval(Duration::from_secs(60));
@@ -192,11 +183,11 @@ async fn main() -> Result<()> {
 
             _ = report_state_interval.tick() => Event::ReportStateTick,
 
-            _ = send_order_interval.tick(), if state.has_order_book() => Event::SendOrderTick,
+            _ = send_order_interval.tick(), if state.book.is_ready() => Event::SendOrderTick,
 
             _ = cancel_order_interval.tick() => Event::CancelOrderTick,
 
-            snapshot_res = &mut snapshot_fut, if !state.has_order_book() => Event::SnapshotDone(snapshot_res),
+            snapshot_res = &mut snapshot, if !state.book.is_ready() => Event::SnapshotDone(snapshot_res),
 
             _ = keepalive_interval.tick() => Event::KeepaliveTick,
         };
@@ -230,38 +221,8 @@ async fn main() -> Result<()> {
 
             Event::Market(event) => match event {
                 MarketStream::Depth(depth) => {
-                    if let Some(ob) = &mut state.order_book {
-                        if (depth.last_final_update_id..=depth.final_update_id)
-                            .contains(&ob.last_update_id)
-                        {
-                            // TODO: recheck the gap-detection logic here
-                            ob.extend(depth);
-                            if ob.get_bbo() != state.bbo_level {
-                                warn!(
-                                    ob_bbo = ?ob.get_bbo(),
-                                    bbo = ?state.bbo_level,
-                                    "Orderbook and BBO level do not match"
-                                )
-                            }
-                        } else {
-                            warn!(
-                                last_final_update_id = %depth.last_final_update_id,
-                                first_update_id = %depth.first_update_id,
-                                final_update_id = %depth.final_update_id,
-                                "Gap detected in depth updates"
-                            );
-                            state.remove_order_book();
-                            snapshot_fut = snapshot_task(
-                                SOLUSDT,
-                                http.clone(),
-                                1000,
-                                Duration::from_millis(1000),
-                            );
-                        }
-                    } else {
-                        // Order book not constructed yet
-                        depth_buffer.push(depth);
-                        info!(buffer_size=%&depth_buffer.len(), "Depth pushed to buffer");
+                    if state.on_depth_received(depth) {
+                        snapshot.set(fetch_snapshot(http.clone(), 1000));
                     }
                 }
                 MarketStream::BookTicker(book_ticker) => {
@@ -271,18 +232,7 @@ async fn main() -> Result<()> {
             },
 
             Event::SnapshotDone(snapshot_res) => {
-                let mut ob = snapshot_res?;
-
-                for depth in depth_buffer.drain(..) {
-                    if depth.final_update_id < ob.last_update_id {
-                        continue; // too old
-                    } else {
-                        // TODO: we don't check U <= lastUpdateId AND u >= lastUpdateId here
-                        ob.extend(depth);
-                    }
-                }
-                info!(last_update_id=%ob.last_update_id, "Order book ready");
-                state.order_book = Some(ob);
+                state.book.on_snapshot(snapshot_res?);
             }
 
             Event::CancelOrderTick => {
@@ -342,9 +292,9 @@ async fn main() -> Result<()> {
                     exec_pnl = %state.pnl.execution_pnl,
                     unrealized_pnl = %state.pnl.unrealized_pnl,
                     realized_pnl = %state.pnl.realized_pnl,
-                    ob = ?state.order_book.as_ref().map(|ob| ob.show(5)),
-                    ob_bids = state.order_book.as_ref().map_or(0, |ob| ob.bids.len()),
-                    ob_asks = state.order_book.as_ref().map_or(0, |ob| ob.asks.len()),
+                    ob = ?state.book.order_book().map(|ob| ob.show(5)),
+                    ob_bids = state.book.order_book().map_or(0, |ob| ob.bids.len()),
+                    ob_asks = state.book.order_book().map_or(0, |ob| ob.asks.len()),
                     "Trading Summary"
                 );
             }
@@ -362,16 +312,8 @@ async fn main() -> Result<()> {
     }
 }
 
-fn snapshot_task(
-    symbol: Symbol,
-    http: reqwest::Client,
-    depth: u16,
-    delay: Duration,
-) -> Pin<Box<dyn Future<Output = ClientResult<OrderBook>> + Send>> {
-    Box::pin(async move {
-        if !delay.is_zero() {
-            tokio::time::sleep(delay).await;
-        }
-        OrderBook::from_snapshot(symbol, depth, data::config::endpoints::REST, http).await
-    })
+/// Waits briefly so depth updates are buffered before the snapshot is taken
+async fn fetch_snapshot(http: reqwest::Client, depth: u16) -> ClientResult<OrderBook> {
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    OrderBook::from_snapshot(SOLUSDT, depth, endpoints::REST, http).await
 }

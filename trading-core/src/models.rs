@@ -6,7 +6,7 @@ use reqwest::Client;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Formatter};
-use tracing::warn;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::error::Result as TradingCoreResult;
@@ -239,6 +239,74 @@ impl fmt::Display for OrderBook {
             "{} OrderBook (last_update_id: {})",
             self.symbol, self.last_update_id
         )
+    }
+}
+
+/// Local order book synchronization state
+#[derive(Debug)]
+pub enum Book {
+    /// Waiting for a REST snapshot; buffers incoming depth updates
+    Syncing(Vec<Depth>),
+    Ready(OrderBook),
+}
+
+impl Default for Book {
+    fn default() -> Self {
+        Book::Syncing(Vec::with_capacity(8))
+    }
+}
+
+impl Book {
+    pub fn order_book(&self) -> Option<&OrderBook> {
+        match self {
+            Book::Ready(ob) => Some(ob),
+            Book::Syncing(_) => None,
+        }
+    }
+
+    pub fn is_ready(&self) -> bool {
+        matches!(self, Book::Ready(_))
+    }
+
+    /// Returns true if a gap is detected and a new snapshot is needed
+    pub fn on_depth(&mut self, depth: Depth) -> bool {
+        match self {
+            Book::Syncing(buffer) => {
+                buffer.push(depth);
+                info!(buffer_size = %buffer.len(), "Depth pushed to buffer");
+                false
+            }
+            Book::Ready(ob) => {
+                if (depth.last_final_update_id..=depth.final_update_id).contains(&ob.last_update_id)
+                {
+                    // TODO: recheck the gap-detection logic here
+                    ob.extend(depth);
+                    false
+                } else {
+                    warn!(
+                        last_final_update_id = %depth.last_final_update_id,
+                        first_update_id = %depth.first_update_id,
+                        final_update_id = %depth.final_update_id,
+                        "Gap detected in depth updates"
+                    );
+                    *self = Book::default();
+                    true
+                }
+            }
+        }
+    }
+
+    pub fn on_snapshot(&mut self, mut ob: OrderBook) {
+        if let Book::Syncing(buffer) = self {
+            for depth in buffer.drain(..) {
+                // TODO: we don't check U <= lastUpdateId AND u >= lastUpdateId here
+                if depth.final_update_id >= ob.last_update_id {
+                    ob.extend(depth);
+                }
+            }
+        }
+        info!(last_update_id = %ob.last_update_id, "Order book ready");
+        *self = Book::Ready(ob);
     }
 }
 
