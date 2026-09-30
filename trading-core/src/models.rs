@@ -316,8 +316,8 @@ impl ProfitAndLoss {
         self.sell_amount += amount;
 
         if old_pos <= Decimal::ZERO {
-            let total_cost = amount - self.avg_entry_price * self.position;
-            self.avg_entry_price = -total_cost / old_pos;
+            let total_cost = self.avg_entry_price * -old_pos + amount;
+            self.avg_entry_price = total_cost / -self.position;
         } else if qty <= old_pos {
             self.realized_pnl += (price - self.avg_entry_price) * qty;
         } else {
