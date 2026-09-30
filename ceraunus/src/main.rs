@@ -35,6 +35,7 @@ use trading_core::{
 
 const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const HTTP_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+const SNAPSHOT_DEPTH: u16 = 1000;
 const STALE_ORDER_THRESHOLD: chrono::Duration = chrono::Duration::seconds(30);
 
 #[tokio::main]
@@ -151,7 +152,7 @@ async fn main() -> Result<()> {
 
     let mut state: State = State::new(SOLUSDT);
 
-    let mut snapshot = Box::pin(fetch_snapshot(http.clone(), 100));
+    let mut snapshot = Box::pin(fetch_snapshot(http.clone(), SNAPSHOT_DEPTH));
     let mut keepalive_interval = tokio::time::interval(Duration::from_secs(50 * 60));
     let mut send_order_interval = tokio::time::interval(Duration::from_secs(10));
     let mut cancel_order_interval = tokio::time::interval(Duration::from_secs(60));
@@ -165,7 +166,7 @@ async fn main() -> Result<()> {
             Some(event) = evt_rx.recv() => match event {
                 MarketStream::Depth(depth) => {
                     if state.on_depth_received(depth) {
-                        snapshot.set(fetch_snapshot(http.clone(), 1000));
+                        snapshot.set(fetch_snapshot(http.clone(), SNAPSHOT_DEPTH));
                     }
                 }
                 MarketStream::BookTicker(book_ticker) => state.on_book_ticker_received(book_ticker),
@@ -180,7 +181,11 @@ async fn main() -> Result<()> {
 
             _ = cancel_order_interval.tick() => cancel_stale_orders(&state, &client),
 
-            snapshot_res = &mut snapshot, if !state.book.is_ready() => state.book.on_snapshot_received(snapshot_res?),
+            snapshot_res = &mut snapshot, if !state.book.is_ready() => {
+                if state.book.on_snapshot_received(snapshot_res?) {
+                    snapshot.set(fetch_snapshot(http.clone(), SNAPSHOT_DEPTH));
+                }
+            }
 
             _ = keepalive_interval.tick() => keepalive_listen_key(&client),
         }

@@ -243,6 +243,7 @@ impl fmt::Display for OrderBook {
 }
 
 /// Local order book synchronization state
+/// <https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/How-to-manage-a-local-order-book-correctly>
 #[derive(Debug)]
 pub enum Book {
     /// Waiting for a REST snapshot; buffers incoming depth updates
@@ -277,13 +278,16 @@ impl Book {
                 false
             }
             Book::Ready(ob) => {
-                if (depth.last_final_update_id..=depth.final_update_id).contains(&ob.last_update_id)
+                // chained by `pu`, or the first event after the snapshot straddling its id
+                let last = ob.last_update_id;
+                if depth.last_final_update_id == last
+                    || (depth.first_update_id <= last && last <= depth.final_update_id)
                 {
-                    // TODO: recheck the gap-detection logic here
                     ob.extend(depth);
                     false
                 } else {
                     warn!(
+                        last_update_id = %ob.last_update_id,
                         last_final_update_id = %depth.last_final_update_id,
                         first_update_id = %depth.first_update_id,
                         final_update_id = %depth.final_update_id,
@@ -296,17 +300,30 @@ impl Book {
         }
     }
 
-    pub fn on_snapshot_received(&mut self, mut ob: OrderBook) {
+    /// Returns true if the snapshot cannot be aligned with the buffered updates and a newer one is needed
+    pub fn on_snapshot_received(&mut self, mut ob: OrderBook) -> bool {
         if let Book::Syncing(buffer) = self {
+            let snapshot_id = ob.last_update_id;
+            buffer.retain(|depth| depth.final_update_id >= snapshot_id);
+
+            let first_covers_snapshot = buffer
+                .first()
+                .is_none_or(|depth| depth.first_update_id <= snapshot_id);
+            let chained = buffer
+                .windows(2)
+                .all(|w| w[1].last_final_update_id == w[0].final_update_id);
+            if !first_covers_snapshot || !chained {
+                warn!(%snapshot_id, buffer_size = %buffer.len(), "Snapshot not aligned with buffered depth");
+                return true;
+            }
+
             for depth in buffer.drain(..) {
-                // TODO: we don't check U <= lastUpdateId AND u >= lastUpdateId here
-                if depth.final_update_id >= ob.last_update_id {
-                    ob.extend(depth);
-                }
+                ob.extend(depth);
             }
         }
         info!(last_update_id = %ob.last_update_id, "Order book ready");
         *self = Book::Ready(ob);
+        false
     }
 }
 
@@ -414,7 +431,7 @@ mod tests {
         depth_seq(0, 2, bids, asks)
     }
 
-    /// Depth event with `pu` = `prev_final` and `u` = `final_id`
+    /// Depth event covering update ids `prev_final + 1 ..= final_id`
     fn depth_seq(prev_final: u64, final_id: u64, bids: Levels, asks: Levels) -> Depth {
         let levels = |ls: Levels| {
             ls.iter()
@@ -422,7 +439,7 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         serde_json::from_value(serde_json::json!({
-            "E": 0, "T": 0, "s": "SOLUSDT", "U": final_id, "u": final_id, "pu": prev_final,
+            "E": 0, "T": 0, "s": "SOLUSDT", "U": prev_final + 1, "u": final_id, "pu": prev_final,
             "b": levels(bids), "a": levels(asks),
         }))
         .unwrap()
@@ -524,7 +541,7 @@ mod tests {
         let mut book = Book::default();
         book.on_snapshot_received(snapshot(10));
 
-        assert!(!book.on_depth_received(depth_seq(10, 11, &[(dec!(100), dec!(5))], &[])));
+        assert!(!book.on_depth_received(depth_seq(9, 11, &[(dec!(100), dec!(5))], &[])));
         assert!(!book.on_depth_received(depth_seq(11, 12, &[(dec!(100), dec!(6))], &[])));
 
         assert_eq!(book.order_book().unwrap().last_update_id, 12);
@@ -550,13 +567,55 @@ mod tests {
         assert!(book.on_depth_received(depth_seq(15, 16, &[], &[])));
 
         // depth arriving while resyncing is buffered, then replayed on the new snapshot
-        assert!(!book.on_depth_received(depth_seq(16, 17, &[(dec!(100), dec!(8))], &[])));
-        book.on_snapshot_received(snapshot(16));
+        assert!(!book.on_depth_received(depth_seq(15, 17, &[(dec!(100), dec!(8))], &[])));
+        assert!(!book.on_snapshot_received(snapshot(16)));
         assert!(book.is_ready());
         assert_eq!(book.order_book().unwrap().last_update_id, 17);
         assert_eq!(best_bid_qty(&book), dec!(8));
 
         assert!(!book.on_depth_received(depth_seq(17, 18, &[(dec!(100), dec!(9))], &[])));
         assert_eq!(best_bid_qty(&book), dec!(9));
+    }
+
+    #[test]
+    fn snapshot_older_than_buffered_depth_requests_another_snapshot() {
+        let mut book = Book::default();
+        // U = 21 > lastUpdateId = 10: updates 11..=20 are missing
+        book.on_depth_received(depth_seq(20, 22, &[], &[]));
+
+        assert!(book.on_snapshot_received(snapshot(10)));
+
+        assert!(!book.is_ready());
+        assert!(matches!(&book, Book::Syncing(buf) if buf.len() == 1)); // kept for the next snapshot
+    }
+
+    #[test]
+    fn broken_chain_inside_buffer_requests_another_snapshot() {
+        let mut book = Book::default();
+        book.on_depth_received(depth_seq(9, 11, &[], &[]));
+        book.on_depth_received(depth_seq(13, 14, &[], &[])); // pu != previous u
+
+        assert!(book.on_snapshot_received(snapshot(10)));
+        assert!(!book.is_ready());
+    }
+
+    #[test]
+    fn first_live_event_after_empty_buffer_may_straddle_snapshot() {
+        let mut book = Book::default();
+        book.on_snapshot_received(snapshot(10));
+
+        // pu (8) < lastUpdateId (10) <= u (12): accepted, then events must chain by pu
+        assert!(!book.on_depth_received(depth_seq(8, 12, &[(dec!(100), dec!(5))], &[])));
+        assert_eq!(book.order_book().unwrap().last_update_id, 12);
+        assert!(!book.on_depth_received(depth_seq(12, 13, &[], &[])));
+    }
+
+    #[test]
+    fn live_event_predating_snapshot_triggers_resync() {
+        let mut book = Book::default();
+        book.on_snapshot_received(snapshot(10));
+
+        assert!(book.on_depth_received(depth_seq(5, 8, &[(dec!(100), dec!(99))], &[])));
+        assert!(!book.is_ready());
     }
 }
