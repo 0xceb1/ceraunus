@@ -408,14 +408,21 @@ mod tests {
     use super::*;
     use rust_decimal::dec;
 
-    fn depth(bids: &[(Decimal, Decimal)], asks: &[(Decimal, Decimal)]) -> Depth {
-        let levels = |ls: &[(Decimal, Decimal)]| {
+    type Levels<'a> = &'a [(Decimal, Decimal)];
+
+    fn depth(bids: Levels, asks: Levels) -> Depth {
+        depth_seq(0, 2, bids, asks)
+    }
+
+    /// Depth event with `pu` = `prev_final` and `u` = `final_id`
+    fn depth_seq(prev_final: u64, final_id: u64, bids: Levels, asks: Levels) -> Depth {
+        let levels = |ls: Levels| {
             ls.iter()
                 .map(|&(p, q)| serde_json::json!([p.to_string(), q.to_string()]))
                 .collect::<Vec<_>>()
         };
         serde_json::from_value(serde_json::json!({
-            "E": 0, "T": 0, "s": "SOLUSDT", "U": 1, "u": 2, "pu": 0,
+            "E": 0, "T": 0, "s": "SOLUSDT", "U": final_id, "u": final_id, "pu": prev_final,
             "b": levels(bids), "a": levels(asks),
         }))
         .unwrap()
@@ -460,5 +467,96 @@ mod tests {
 
         assert_eq!(ob.get_bbo().unwrap().0.price, dec!(99));
         assert_eq!(ob.get_bbo().unwrap().1.price, dec!(102));
+    }
+
+    /// Book snapshot whose `last_update_id` is `id`, best bid 100 / best ask 101
+    fn snapshot(id: u64) -> OrderBook {
+        let mut ob = OrderBook::new(Symbol::SOLUSDT);
+        ob.extend(depth_seq(
+            0,
+            id,
+            &[(dec!(100), dec!(1))],
+            &[(dec!(101), dec!(1))],
+        ));
+        ob
+    }
+
+    fn best_bid_qty(book: &Book) -> Decimal {
+        book.order_book().unwrap().get_bbo().unwrap().0.quantity
+    }
+
+    #[test]
+    fn syncing_buffers_depth_without_requesting_snapshot() {
+        let mut book = Book::default();
+
+        assert!(!book.on_depth_received(depth_seq(9, 10, &[], &[])));
+        assert!(!book.on_depth_received(depth_seq(10, 11, &[], &[])));
+
+        assert!(!book.is_ready());
+        assert!(matches!(&book, Book::Syncing(buf) if buf.len() == 2));
+    }
+
+    #[test]
+    fn snapshot_drops_stale_buffered_depth_and_replays_newer() {
+        let mut book = Book::default();
+        book.on_depth_received(depth_seq(8, 9, &[(dec!(100), dec!(50))], &[])); // before snapshot
+        book.on_depth_received(depth_seq(9, 11, &[(dec!(100), dec!(60))], &[])); // covers snapshot id
+        book.on_depth_received(depth_seq(11, 12, &[(dec!(100), dec!(70))], &[]));
+
+        book.on_snapshot_received(snapshot(10));
+
+        assert!(book.is_ready());
+        assert_eq!(book.order_book().unwrap().last_update_id, 12);
+        assert_eq!(best_bid_qty(&book), dec!(70)); // stale 50 dropped, 60 then 70 applied
+    }
+
+    #[test]
+    fn snapshot_without_buffered_depth_is_ready_as_is() {
+        let mut book = Book::default();
+        book.on_snapshot_received(snapshot(10));
+
+        assert!(book.is_ready());
+        assert_eq!(book.order_book().unwrap().last_update_id, 10);
+    }
+
+    #[test]
+    fn ready_book_applies_contiguous_depth() {
+        let mut book = Book::default();
+        book.on_snapshot_received(snapshot(10));
+
+        assert!(!book.on_depth_received(depth_seq(10, 11, &[(dec!(100), dec!(5))], &[])));
+        assert!(!book.on_depth_received(depth_seq(11, 12, &[(dec!(100), dec!(6))], &[])));
+
+        assert_eq!(book.order_book().unwrap().last_update_id, 12);
+        assert_eq!(best_bid_qty(&book), dec!(6));
+    }
+
+    #[test]
+    fn gap_resets_to_syncing_and_requests_snapshot() {
+        let mut book = Book::default();
+        book.on_snapshot_received(snapshot(10));
+
+        // pu = 15 but the book is at 10: updates 11..=15 were missed
+        assert!(book.on_depth_received(depth_seq(15, 16, &[(dec!(100), dec!(5))], &[])));
+
+        assert!(!book.is_ready());
+        assert!(matches!(&book, Book::Syncing(buf) if buf.is_empty()));
+    }
+
+    #[test]
+    fn resync_after_gap_recovers_and_keeps_applying_depth() {
+        let mut book = Book::default();
+        book.on_snapshot_received(snapshot(10));
+        assert!(book.on_depth_received(depth_seq(15, 16, &[], &[])));
+
+        // depth arriving while resyncing is buffered, then replayed on the new snapshot
+        assert!(!book.on_depth_received(depth_seq(16, 17, &[(dec!(100), dec!(8))], &[])));
+        book.on_snapshot_received(snapshot(16));
+        assert!(book.is_ready());
+        assert_eq!(book.order_book().unwrap().last_update_id, 17);
+        assert_eq!(best_bid_qty(&book), dec!(8));
+
+        assert!(!book.on_depth_received(depth_seq(17, 18, &[(dec!(100), dec!(9))], &[])));
+        assert_eq!(best_bid_qty(&book), dec!(9));
     }
 }
