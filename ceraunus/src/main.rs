@@ -37,21 +37,6 @@ const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const HTTP_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 const STALE_ORDER_THRESHOLD: chrono::Duration = chrono::Duration::seconds(30);
 
-#[derive(Debug)]
-enum Event {
-    // websocket
-    Account(AccountStream),
-    Market(MarketStream),
-    // orderbook
-    SnapshotDone(ClientResult<OrderBook>),
-    // open order
-    SendOrderTick,
-    CancelOrderTick,
-
-    ReportStateTick,
-    KeepaliveTick,
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let cfg_path = std::env::var("CERAUNUS_CONFIG")
@@ -174,142 +159,132 @@ async fn main() -> Result<()> {
 
     // MAIN EVENT LOOP
     loop {
-        let event = tokio::select! {
+        tokio::select! {
             biased;
 
-            Some(event) = evt_rx.recv() => Event::Market(event),
-
-            Some(acct_event) = acct_evt_rx.recv() => Event::Account(acct_event),
-
-            _ = report_state_interval.tick() => Event::ReportStateTick,
-
-            _ = send_order_interval.tick(), if state.book.is_ready() => Event::SendOrderTick,
-
-            _ = cancel_order_interval.tick() => Event::CancelOrderTick,
-
-            snapshot_res = &mut snapshot, if !state.book.is_ready() => Event::SnapshotDone(snapshot_res),
-
-            _ = keepalive_interval.tick() => Event::KeepaliveTick,
-        };
-
-        match event {
-            Event::Account(acct_event) => match acct_event {
-                AccountStream::OrderTradeUpdate(update_event) => {
-                    if let Err(err) = state.on_update_received(&update_event) {
-                        error!(
-                            %err,
-                            symbol = %update_event.symbol(),
-                            order_id = %update_event.order_id(),
-                            client_order_id = %update_event.client_order_id(),
-                            exec_type = %update_event.exec_type(),
-                            order_status = %update_event.order_status(),
-                            "Failed to process order update"
-                        );
-                    }
-                }
-                AccountStream::TradeLite(trade_lite) => {
-                    trade_lite.log();
-                }
-                AccountStream::AccountUpdate(update_event) => {
-                    info!(
-                        reason = %update_event.reason(),
-                        "Account update received"
-                    );
-                }
-                AccountStream::Raw(_) => {}
-            },
-
-            Event::Market(event) => match event {
+            Some(event) = evt_rx.recv() => match event {
                 MarketStream::Depth(depth) => {
                     if state.on_depth_received(depth) {
                         snapshot.set(fetch_snapshot(http.clone(), 1000));
                     }
                 }
-                MarketStream::BookTicker(book_ticker) => {
-                    state.on_book_ticker_received(book_ticker);
-                }
+                MarketStream::BookTicker(book_ticker) => state.on_book_ticker_received(book_ticker),
                 MarketStream::AggTrade(_) | MarketStream::Trade(_) | MarketStream::Raw(_) => {}
             },
 
-            Event::SnapshotDone(snapshot_res) => {
-                state.book.on_snapshot(snapshot_res?);
-            }
+            Some(event) = acct_evt_rx.recv() => on_account_event(&mut state, event),
 
-            Event::CancelOrderTick => {
-                let stale_ids = state.stale_order_ids(STALE_ORDER_THRESHOLD);
+            _ = report_state_interval.tick() => report_state(&state),
 
-                for stale_id in stale_ids {
-                    let client = Arc::clone(&client);
-                    tokio::spawn(async move {
-                        match client.cancel_order(SOLUSDT, stale_id).await {
-                            Ok(cancel) => {
-                                info!(
-                                    symbol=%cancel.symbol,
-                                    price=%cancel.price,
-                                    client_order_id=%cancel.client_order_id,
-                                    order_id=%cancel.order_id,
-                                    "Cancel stale order ACK"
-                                );
-                            }
-                            Err(err) => {
-                                error!(%err, %stale_id, "Cancel stale order failed");
-                            }
-                        }
-                    });
-                }
-            }
+            _ = send_order_interval.tick(), if state.book.is_ready() => send_quotes(&mut state, &client),
 
-            Event::SendOrderTick => {
-                let quotes = QuoteStrategy::generate_quotes(SOLUSDT, &state);
-                state.register_orders(&quotes);
-                let client = Arc::clone(&client);
-                tokio::spawn(async move {
-                    let results = client.open_orders(&quotes).await;
+            _ = cancel_order_interval.tick() => cancel_stale_orders(&state, &client),
 
-                    for result in results {
-                        match result {
-                            Ok(success) => info!(
-                                symbol=%success.symbol,
-                                price=%success.price,
-                                client_order_id=%success.client_order_id,
-                                order_id=%success.order_id,
-                                "Open order ACK"
-                            ),
-                            Err(err) => {
-                                // TODO: complete the order
-                                warn!(%err, "Open order failed");
-                            }
-                        }
-                    }
-                });
-            }
+            snapshot_res = &mut snapshot, if !state.book.is_ready() => state.book.on_snapshot(snapshot_res?),
 
-            Event::ReportStateTick => {
-                info!(
-                    elapsed = %(Utc::now() - state.start_time),
-                    turnover = %state.turnover,
-                    curr_pos = %state.get_position(),
-                    exec_pnl = %state.pnl.execution_pnl,
-                    unrealized_pnl = %state.pnl.unrealized_pnl,
-                    realized_pnl = %state.pnl.realized_pnl,
-                    ob = ?state.book.order_book().map(|ob| ob.show(5)),
-                    ob_bids = state.book.order_book().map_or(0, |ob| ob.bids.len()),
-                    ob_asks = state.book.order_book().map_or(0, |ob| ob.asks.len()),
-                    "Trading Summary"
-                );
-            }
-
-            Event::KeepaliveTick => {
-                let client = Arc::clone(&client);
-                tokio::spawn(async move {
-                    match client.keepalive_listen_key().await {
-                        Ok(key) => info!(listen_key=%key, "Listen key keepalive sent"),
-                        Err(err) => error!(%err, "Listen key keepalive failed"),
-                    }
-                });
-            }
+            _ = keepalive_interval.tick() => keepalive_listen_key(&client),
         }
     }
+}
+
+fn on_account_event(state: &mut State, event: AccountStream) {
+    match event {
+        AccountStream::OrderTradeUpdate(update_event) => {
+            if let Err(err) = state.on_update_received(&update_event) {
+                error!(
+                    %err,
+                    symbol = %update_event.symbol(),
+                    order_id = %update_event.order_id(),
+                    client_order_id = %update_event.client_order_id(),
+                    exec_type = %update_event.exec_type(),
+                    order_status = %update_event.order_status(),
+                    "Failed to process order update"
+                );
+            }
+        }
+        AccountStream::TradeLite(trade_lite) => {
+            trade_lite.log();
+        }
+        AccountStream::AccountUpdate(update_event) => {
+            info!(
+                reason = %update_event.reason(),
+                "Account update received"
+            );
+        }
+        AccountStream::Raw(_) => {}
+    }
+}
+
+fn send_quotes(state: &mut State, client: &Arc<Client>) {
+    let quotes = QuoteStrategy::generate_quotes(SOLUSDT, state);
+    state.register_orders(&quotes);
+    let client = Arc::clone(client);
+    tokio::spawn(async move {
+        let results = client.open_orders(&quotes).await;
+
+        for result in results {
+            match result {
+                Ok(success) => info!(
+                    symbol=%success.symbol,
+                    price=%success.price,
+                    client_order_id=%success.client_order_id,
+                    order_id=%success.order_id,
+                    "Open order ACK"
+                ),
+                Err(err) => {
+                    // TODO: complete the order
+                    warn!(%err, "Open order failed");
+                }
+            }
+        }
+    });
+}
+
+fn cancel_stale_orders(state: &State, client: &Arc<Client>) {
+    for stale_id in state.stale_order_ids(STALE_ORDER_THRESHOLD) {
+        let client = Arc::clone(client);
+        tokio::spawn(async move {
+            match client.cancel_order(SOLUSDT, stale_id).await {
+                Ok(cancel) => {
+                    info!(
+                        symbol=%cancel.symbol,
+                        price=%cancel.price,
+                        client_order_id=%cancel.client_order_id,
+                        order_id=%cancel.order_id,
+                        "Cancel stale order ACK"
+                    );
+                }
+                Err(err) => {
+                    error!(%err, %stale_id, "Cancel stale order failed");
+                }
+            }
+        });
+    }
+}
+
+fn report_state(state: &State) {
+    info!(
+        elapsed = %(Utc::now() - state.start_time),
+        turnover = %state.turnover,
+        curr_pos = %state.get_position(),
+        exec_pnl = %state.pnl.execution_pnl,
+        unrealized_pnl = %state.pnl.unrealized_pnl,
+        realized_pnl = %state.pnl.realized_pnl,
+        ob = ?state.book.order_book().map(|ob| ob.show(5)),
+        ob_bids = state.book.order_book().map_or(0, |ob| ob.bids.len()),
+        ob_asks = state.book.order_book().map_or(0, |ob| ob.asks.len()),
+        "Trading Summary"
+    );
+}
+
+fn keepalive_listen_key(client: &Arc<Client>) {
+    let client = Arc::clone(client);
+    tokio::spawn(async move {
+        match client.keepalive_listen_key().await {
+            Ok(key) => info!(listen_key=%key, "Listen key keepalive sent"),
+            Err(err) => error!(%err, "Listen key keepalive failed"),
+        }
+    });
 }
 
 /// Waits briefly so depth updates are buffered before the snapshot is taken
