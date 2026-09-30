@@ -399,7 +399,6 @@ pub struct OrderSuccessResp {
     orig_qty: Decimal,     // initial quoted quantity
     executed_qty: Decimal, // filled quantity
     cum_qty: Decimal,      // filled quantity
-    cum_quote: Decimal,    // filled amount in usdt
     side: Side,
     #[serde(with = "chrono::serde::ts_milliseconds")]
     update_time: DateTime<Utc>,

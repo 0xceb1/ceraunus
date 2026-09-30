@@ -160,7 +160,7 @@ impl OrderBook {
         )
     }
 
-    /// Neither self.bids nor self.asks should be empty
+    /// A zero-quantity update removes a level; if the level is absent it is ignored
     pub fn extend(&mut self, depth: Depth) {
         self.xchg_ts = depth.transaction_time;
         self.local_ts = Utc::now();
@@ -170,7 +170,9 @@ impl OrderBook {
             let mut i = self.bids.len();
             loop {
                 if i == 0 {
-                    self.bids.insert(0, *upd);
+                    if !upd.quantity.is_zero() {
+                        self.bids.insert(0, *upd);
+                    }
                     break;
                 }
                 i -= 1;
@@ -182,7 +184,9 @@ impl OrderBook {
                     }
                     break;
                 } else if self.bids[i].price < upd.price {
-                    self.bids.insert(i + 1, *upd);
+                    if !upd.quantity.is_zero() {
+                        self.bids.insert(i + 1, *upd);
+                    }
                     break;
                 }
             }
@@ -192,7 +196,9 @@ impl OrderBook {
             let mut i = self.asks.len();
             loop {
                 if i == 0 {
-                    self.asks.insert(0, *upd);
+                    if !upd.quantity.is_zero() {
+                        self.asks.insert(0, *upd);
+                    }
                     break;
                 }
                 i -= 1;
@@ -204,7 +210,9 @@ impl OrderBook {
                     }
                     break;
                 } else if self.asks[i].price > upd.price {
-                    self.asks.insert(i + 1, *upd);
+                    if !upd.quantity.is_zero() {
+                        self.asks.insert(i + 1, *upd);
+                    }
                     break;
                 }
             }
@@ -316,13 +324,73 @@ impl ProfitAndLoss {
         self.sell_amount += amount;
 
         if old_pos <= Decimal::ZERO {
-            let total_cost = amount - self.avg_entry_price * self.position;
-            self.avg_entry_price = -total_cost / old_pos;
+            let total_cost = self.avg_entry_price * -old_pos + amount;
+            self.avg_entry_price = total_cost / -self.position;
         } else if qty <= old_pos {
             self.realized_pnl += (price - self.avg_entry_price) * qty;
         } else {
             self.realized_pnl += (price - self.avg_entry_price) * old_pos;
             self.avg_entry_price = price;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal::dec;
+
+    fn depth(bids: &[(Decimal, Decimal)], asks: &[(Decimal, Decimal)]) -> Depth {
+        let levels = |ls: &[(Decimal, Decimal)]| {
+            ls.iter()
+                .map(|&(p, q)| serde_json::json!([p.to_string(), q.to_string()]))
+                .collect::<Vec<_>>()
+        };
+        serde_json::from_value(serde_json::json!({
+            "E": 0, "T": 0, "s": "SOLUSDT", "U": 1, "u": 2, "pu": 0,
+            "b": levels(bids), "a": levels(asks),
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn zero_quantity_update_for_missing_level_is_ignored() {
+        let mut ob = OrderBook::new(Symbol::SOLUSDT);
+        ob.extend(depth(
+            &[(dec!(100), dec!(1)), (dec!(99), dec!(2))],
+            &[(dec!(101), dec!(1)), (dec!(102), dec!(2))],
+        ));
+
+        // above best, between levels, and below worst
+        ob.extend(depth(
+            &[
+                (dec!(100.5), dec!(0)),
+                (dec!(99.5), dec!(0)),
+                (dec!(98), dec!(0)),
+            ],
+            &[
+                (dec!(100.6), dec!(0)),
+                (dec!(101.5), dec!(0)),
+                (dec!(103), dec!(0)),
+            ],
+        ));
+
+        assert_eq!(ob.bids.len(), 2);
+        assert_eq!(ob.asks.len(), 2);
+        assert_eq!(ob.get_bbo().unwrap().0.price, dec!(100));
+        assert_eq!(ob.get_bbo().unwrap().1.price, dec!(101));
+    }
+
+    #[test]
+    fn zero_quantity_update_removes_existing_level() {
+        let mut ob = OrderBook::new(Symbol::SOLUSDT);
+        ob.extend(depth(
+            &[(dec!(100), dec!(1)), (dec!(99), dec!(2))],
+            &[(dec!(101), dec!(1)), (dec!(102), dec!(2))],
+        ));
+        ob.extend(depth(&[(dec!(100), dec!(0))], &[(dec!(101), dec!(0))]));
+
+        assert_eq!(ob.get_bbo().unwrap().0.price, dec!(99));
+        assert_eq!(ob.get_bbo().unwrap().1.price, dec!(102));
     }
 }
