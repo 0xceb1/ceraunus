@@ -124,7 +124,7 @@ async fn main() -> Result<()> {
 
     use data::config::endpoints;
 
-    let mkt_url = Url::parse(endpoints::WS_PUBLIC)?;
+    let mkt_url = Url::parse(&format!("{}/ws", endpoints::WS_PUBLIC))?;
     let acct_url = Url::parse(&format!(
         "{}/ws?listenKey={}",
         endpoints::WS_PRIVATE, listen_key
